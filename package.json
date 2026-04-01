@@ -1,0 +1,44 @@
+{
+  "name": "visualizing-openclaw",
+  "version": "0.9.0",
+  "description": "OpenClaw 多 Agent 协作监控和管理平台",
+  "private": true,
+  "workspaces": [
+    "packages/frontend",
+    "packages/backend"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev:frontend\" \"npm run dev:backend\"",
+    "dev:frontend": "npm run dev --workspace=packages/frontend",
+    "dev:backend": "npm run dev --workspace=packages/backend",
+    "build": "npm run build --workspace=packages/frontend && npm run build --workspace=packages/backend",
+    "lint": "npm run lint --workspaces",
+    "test": "npm run test --workspaces"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/openclaw/vis-openclaw.git"
+  },
+  "bugs": {
+    "url": "https://github.com/openclaw/vis-openclaw/issues"
+  },
+  "homepage": "https://github.com/openclaw/vis-openclaw#readme",
+  "keywords": [
+    "openclaw",
+    "agent",
+    "multi-agent",
+    "visualization",
+    "dashboard",
+    "vue3",
+    "typescript"
+  ],
+  "author": "OpenClaw Contributors",
+  "license": "MIT"
+}
