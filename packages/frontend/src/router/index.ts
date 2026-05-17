@@ -35,6 +35,47 @@ const routes: RouteRecordRaw[] = [
     name: 'Commands',
     component: () => import('@/views/CommandsView.vue'),
     meta: { title: '命令配置' }
+  },
+  // 游戏界面展示
+  {
+    path: '/game-display',
+    name: 'GameDisplay',
+    component: () => import('@/views/GameView.vue'),
+    meta: { title: '游戏界面' }
+  },
+  // 游戏编辑模块路由
+  {
+    path: '/game',
+    name: 'Game',
+    component: () => import('@/views/game/GameLayout.vue'),
+    redirect: '/game/preview',
+    meta: { title: '游戏界面编辑' },
+    children: [
+      {
+        path: 'map-editor',
+        name: 'GameMapEditor',
+        component: () => import('@/views/game/MapEditorView.vue'),
+        meta: { title: '地图编辑器' }
+      },
+      {
+        path: 'preview',
+        name: 'GamePreview',
+        component: () => import('@/views/game/PreviewView.vue'),
+        meta: { title: '预览' }
+      },
+      {
+        path: 'units',
+        name: 'GameUnits',
+        component: () => import('@/views/game/SpriteDemoView.vue'),
+        meta: { title: '单位演示' }
+      },
+      {
+        path: 'environment',
+        name: 'GameEnvironment',
+        component: () => import('@/views/game/EnvironmentView.vue'),
+        meta: { title: '环境元素' }
+      }
+    ]
   }
 ]
 

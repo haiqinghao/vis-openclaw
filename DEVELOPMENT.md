@@ -148,7 +148,12 @@ packages/backend/src/
 │   ├── websocket.ts   # WebSocket 服务
 │   ├── openclaw-cli.ts # OpenClaw CLI 封装
 │   ├── config.ts      # 配置服务
-│   └── cron.ts        # 定时任务服务
+│   ├── cron.ts        # 定时任务服务
+│   ├── agent-status.ts  # Agent 状态事件桥与本地缓存
+│   ├── realtime-channels.ts  # 实时通道聚合
+│   ├── openclaw-gateway-rpc.ts  # OpenClaw Gateway RPC 客户端
+│   ├── task-dispatch.ts  # 任务分发服务
+│   └── task-state.ts  # 任务状态机
 └── index.ts           # 入口
 ```
 
@@ -243,6 +248,13 @@ export async function agents_list() {
 | `stats:update` | Server → Client | 统计更新 |
 | `agent:updated` | Server → Client | Agent 状态更新 |
 | `session:message` | Server → Client | 新消息推送 |
+| `session:state` | Server → Client | 会话实时状态变化（thinking/generating/tool_calling/complete/idle） |
+| `agent:thinking` | Server → Client | Agent 进入思考状态 |
+| `agent:generating` | Server → Client | Agent 进入生成状态 |
+| `agent:tool_calling` | Server → Client | Agent 进入工具调用状态 |
+| `agent:complete` | Server → Client | Agent 本轮生成完成 |
+| `agent:idle` | Server → Client | Agent 进入空闲状态 |
+| `process:cleanup` | Server → Client | 失控进程已清理 |
 
 ## 定时任务
 

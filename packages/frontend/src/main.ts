@@ -7,6 +7,7 @@ import App from './App.vue'
 import router from './router'
 import './styles/main.css'
 import './styles/palantir-theme.css'
+import './styles/game/game.css'
 
 const app = createApp(App)
 

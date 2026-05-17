@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-05-17
+
+### Added
+- Game interface visualization module with map selection, live agent/task avatars, sprite animation, map zoom, pan, and centered viewport controls.
+- Map editor and preview support for backend-backed map storage, finer zoom presets, mouse-wheel zoom, drag-to-pan, and viewport centering.
+- OpenClaw Gateway event bridge for lower-cost agent/session status tracking.
+- Task dispatch state model with task-to-agent session linkage and real-time game interface animation updates.
+
+### Changed
+- Reworked agent status monitoring away from resource-heavy polling/file-watcher approaches toward Gateway/OpenClaw event synchronization with local cache fallback.
+- Improved agent creation/update flows, avatar configuration, workspace metadata handling, and duplicate task rendering behavior.
+- Refined release-facing UI behavior in the game interface, including loading state before restoring a configured map.
+
+### Fixed
+- Fixed stale/duplicate agent rows caused by incomplete real-time list reconciliation.
+- Fixed task dispatch timeout and visual-agent movement chain so task assignment reaches OpenClaw sessions and the game view.
+- Fixed game-map preview/editor centering and interaction issues after scaling.
+
+
 ## [0.9.0] - 2026-04-01
 
 ### Added
@@ -56,6 +75,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 网关控制 - 启动/重启 Gateway
 - WebSocket 实时通信
 
-[0.9.0]: https://github.com/openclaw/vis-openclaw/compare/v0.6.0...v0.9.0
-[0.6.0]: https://github.com/openclaw/vis-openclaw/compare/v0.5.0...v0.6.0
-[0.5.0]: https://github.com/openclaw/vis-openclaw/releases/tag/v0.5.0
+[1.1.0]: https://github.com/haiqinghao/vis-openclaw/compare/v0.9.0...v1.1.0
+[0.9.0]: https://github.com/haiqinghao/vis-openclaw/compare/v0.6.0...v0.9.0
+[0.6.0]: https://github.com/haiqinghao/vis-openclaw/compare/v0.5.0...v0.6.0
+[0.5.0]: https://github.com/haiqinghao/vis-openclaw/releases/tag/v0.5.0

@@ -39,7 +39,7 @@ git status --short
 echo.
 
 echo [STEP 4] Committing...
-git commit -m "feat: VIS OpenClaw v0.9.0 release - Multi-Agent monitoring platform"
+git commit -m "feat: VIS OpenClaw v1.1.0 release - Multi-Agent monitoring platform"
 if errorlevel 1 (
     echo [INFO] Nothing to commit or commit failed
 )
@@ -85,12 +85,12 @@ echo.
 echo Repo: https://github.com/%GITHUB_USER%/%REPO_NAME%
 echo.
 
-set /p CREATE_TAG="Create v0.9.0 tag? (Y/N): "
+set /p CREATE_TAG="Create v1.1.0 tag? (Y/N): "
 if /i "%CREATE_TAG%"=="Y" (
     echo.
     echo [STEP 8] Creating tag...
-    git tag -a v0.9.0 -m "VIS OpenClaw v0.9.0"
-    git push origin v0.9.0
+    git tag -a v1.1.0 -m "VIS OpenClaw v1.1.0"
+    git push origin v1.1.0
     echo Done!
     echo.
     echo Create release at:

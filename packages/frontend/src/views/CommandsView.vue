@@ -8,7 +8,7 @@ const commandCategories = [
   {
     key: 'agent',
     title: 'Agent 管理命令',
-    icon: 'User',
+    icon: User,
     commands: [
       {
         command: 'openclaw agents',
@@ -30,7 +30,7 @@ const commandCategories = [
   {
     key: 'session',
     title: 'Session 管理命令',
-    icon: 'ChatLineRound',
+    icon: ChatLineRound,
     commands: [
       {
         command: 'openclaw sessions --all-agents',
@@ -52,7 +52,7 @@ const commandCategories = [
   {
     key: 'gateway',
     title: 'Gateway 管理命令',
-    icon: 'Connection',
+    icon: Connection,
     commands: [
       {
         command: 'openclaw gateway status',
@@ -79,7 +79,7 @@ const commandCategories = [
   {
     key: 'config',
     title: '配置命令',
-    icon: 'Setting',
+    icon: Setting,
     commands: [
       {
         command: 'openclaw config show --json',
@@ -101,7 +101,7 @@ const commandCategories = [
   {
     key: 'other',
     title: '其他命令',
-    icon: 'More',
+    icon: More,
     commands: [
       {
         command: 'openclaw status',
@@ -142,8 +142,8 @@ function copyCommand(command: string) {
     <div class="content-body">
       <!-- 分类标签 -->
       <div class="category-tabs">
-        <div 
-          v-for="category in commandCategories" 
+        <div
+          v-for="category in commandCategories"
           :key="category.key"
           :class="['category-tab', { active: activeTab === category.key }]"
           @click="activeTab = category.key"
@@ -155,8 +155,8 @@ function copyCommand(command: string) {
 
       <!-- 命令列表 -->
       <div class="commands-list">
-        <div 
-          v-for="cmd in commandCategories.find(c => c.key === activeTab)?.commands" 
+        <div
+          v-for="cmd in commandCategories.find(c => c.key === activeTab)?.commands"
           :key="cmd.command"
           class="command-card"
         >
@@ -164,9 +164,9 @@ function copyCommand(command: string) {
             <div class="command-text">
               <code>{{ cmd.command }}</code>
             </div>
-            <el-button 
-              size="small" 
-              type="primary" 
+            <el-button
+              size="small"
+              type="primary"
               link
               @click="copyCommand(cmd.command)"
             >

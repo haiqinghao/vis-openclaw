@@ -42,7 +42,7 @@ VIS OpenClaw is a visualization platform for monitoring and managing OpenClaw mu
 
 ```bash
 # Clone repository
-git clone https://github.com/openclaw/vis-openclaw.git
+git clone https://github.com/haiqinghao/vis-openclaw.git
 cd vis-openclaw
 
 # Install dependencies
@@ -117,7 +117,7 @@ VIS OpenClaw 是一个用于监控和管理 OpenClaw 多 Agent 系统的可视�
 
 ```bash
 # 克隆仓库
-git clone https://github.com/openclaw/vis-openclaw.git
+git clone https://github.com/haiqinghao/vis-openclaw.git
 cd vis-openclaw
 
 # 安装依赖

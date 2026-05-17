@@ -1,28 +1,37 @@
 import { Router } from 'express'
-import { taskDb, ScheduledConfig } from '../services/database.js'
-import { sessions_spawn, sessions_list } from '../services/openclaw-cli.js'
+import { tasksDb } from '../db/tasks-db.js'
+import type { ScheduledConfig } from '../db/tasks-db.js'
 import { createScheduledTask, deleteScheduledTask, triggerScheduledTask } from '../services/cron.js'
+import {
+  extractTaskMentions,
+  getTaskDispatchTargets
+} from '../services/task-dispatch.js'
+import {
+  acceptTaskDispatch,
+  publishTaskCreated,
+  publishTaskDeleted,
+  publishTaskUpdated
+} from '../services/task-execution.js'
+import {
+  buildEditableTaskPatch,
+  canPauseTask,
+  canScheduleTask,
+  canStartTask,
+  normalizeTaskStatus
+} from '../services/task-state.js'
 
 export const taskRouter = Router()
 
-/**
- * 检查并更新任务状态
- * - running → completed: 所有关联会话都已结束
- * - running → failed: 启动失败或运行出错
- */
-async function updateTaskStatus(task: any): Promise<any> {
-  // 状态说明：
-  // pending = 待分发：任务创建时的默认状态
-  // distributed = 已分发：任务已启动，Agent 已收到任务
-  // failed = 失败：启动失败
-  // 不再自动更新状态，由用户手动控制
-  return task
+function getTaskStatus(task: any): string {
+  return normalizeTaskStatus(task)
 }
+
+// Task state is advanced by dispatch acceptance and the OpenClaw status bridge.
 
 // 获取任务列表
 taskRouter.get('/', async (_req, res) => {
   try {
-    const tasks = taskDb.findAll()
+    const tasks = tasksDb.findAll()
     res.json(tasks)
   } catch (error: any) {
     console.error('[Task GET] Error:', error)
@@ -30,42 +39,21 @@ taskRouter.get('/', async (_req, res) => {
   }
 })
 
-/**
- * 从文本中提取 @mentions
- * 支持格式: @agentName 或 @[agentId]
- */
-function extractMentions(text: string): string[] {
-  const mentions: string[] = []
-  
-  // 匹配 @agentName 格式（字母、数字、下划线、连字符）
-  const simpleMentionRegex = /@([a-zA-Z0-9_-]+)/g
-  let match
-  while ((match = simpleMentionRegex.exec(text)) !== null) {
-    mentions.push(match[1])
-  }
-  
-  // 匹配 @[agentId] 格式（支持包含其他字符的 ID）
-  const bracketMentionRegex = /@\[([^\]]+)\]/g
-  while ((match = bracketMentionRegex.exec(text)) !== null) {
-    mentions.push(match[1])
-  }
-  
-  // 去重
-  return [...new Set(mentions)]
-}
-
-// 创建任务
 taskRouter.post('/', async (req, res) => {
   try {
-    const { name, description, collaborationMode, agents } = req.body
+    const { name, description, collaborationMode, agents, avatarType } = req.body
 
     if (!name) {
       return res.status(400).json({ error: 'Name is required' })
     }
 
+    if (avatarType !== undefined && avatarType !== 'sheep' && avatarType !== 'gold') {
+      return res.status(400).json({ error: 'avatarType must be "sheep" or "gold"' })
+    }
+
     // 从 description 中提取 @mentions
-    const mentionedAgents = extractMentions(description || '')
-    
+    const mentionedAgents = extractTaskMentions(description || '')
+
     // 确定最终的 agents 列表：优先使用 @mentions，其次使用传入的 agents
     let finalAgents = agents
     if (mentionedAgents.length > 0) {
@@ -76,13 +64,15 @@ taskRouter.post('/', async (req, res) => {
       console.log(`[Task POST] Extracted @mentions from description: ${mentionedAgents.join(', ')}`)
     }
 
-    const task = taskDb.create({
+    const task = tasksDb.create({
       name,
       description,
       collaborationMode,
-      agents: finalAgents
+      agents: finalAgents,
+      avatarType: avatarType || 'sheep'
     })
 
+    publishTaskCreated(task)
     res.status(201).json(task)
   } catch (error: any) {
     console.error('[Task POST] Error:', error)
@@ -94,21 +84,19 @@ taskRouter.post('/', async (req, res) => {
 taskRouter.put('/:id', async (req, res) => {
   try {
     const { id } = req.params
-    const { name, description, collaborationMode, status, agents, sessionIds } = req.body
+    const existingTask = tasksDb.findById(id)
 
-    const task = taskDb.update(id, {
-      name,
-      description,
-      collaborationMode,
-      status,
-      agents,
-      sessionIds
-    })
-
-    if (!task) {
+    if (!existingTask) {
       return res.status(404).json({ error: 'Task not found' })
     }
 
+    const patchResult = buildEditableTaskPatch(req.body || {})
+    if (!patchResult.ok) {
+      return res.status(409).json({ error: patchResult.error })
+    }
+
+    const task = tasksDb.update(id, patchResult.patch || {})
+    publishTaskUpdated(task)
     res.json(task)
   } catch (error: any) {
     console.error('[Task PUT] Error:', error)
@@ -120,7 +108,9 @@ taskRouter.put('/:id', async (req, res) => {
 taskRouter.delete('/:id', async (req, res) => {
   try {
     const { id } = req.params
-    taskDb.delete(id)
+    const task = tasksDb.findById(id)
+    tasksDb.delete(id)
+    publishTaskDeleted(id, task)
     res.status(204).send()
   } catch (error: any) {
     console.error('[Task DELETE] Error:', error)
@@ -129,111 +119,38 @@ taskRouter.delete('/:id', async (req, res) => {
 })
 
 // 启动任务
+// Start task dispatch without blocking the HTTP request on agent startup.
 taskRouter.post('/:id/start', async (req, res) => {
   try {
     const { id } = req.params
-    const task = taskDb.findById(id)
+    const task = tasksDb.findById(id)
 
     if (!task) {
       return res.status(404).json({ error: 'Task not found' })
     }
 
-    // 状态检查
-    if (task.status === 'distributed') {
-      return res.status(400).json({ error: 'Task is already distributed' })
+    const taskStatus = getTaskStatus(task)
+    if (!canStartTask(taskStatus)) {
+      return res.status(409).json({
+        error: `Task cannot be started from status "${taskStatus}"`
+      })
     }
 
-    // 从 description 中提取 @mentions
-    const mentionedAgents = extractMentions(task.description || '')
-    
-    // 确定要启动的 agent 列表
-    // 优先使用 @mentions，如果没有则回退到 task.agents
-    let agentsToStart: { agentId: string; instructions?: string }[] = []
-    
-    if (mentionedAgents.length > 0) {
-      // 使用 @mentions
-      console.log(`[Task Start] Found mentions in description: ${mentionedAgents.join(', ')}`)
-      agentsToStart = mentionedAgents.map(agentId => ({
-        agentId,
-        instructions: task.description
-      }))
-    } else if (task.agents && task.agents.length > 0) {
-      // 回退到 task.agents
-      console.log('[Task Start] No mentions found, using task.agents')
-      agentsToStart = task.agents.map(a => ({
-        agentId: a.agentId,
-        instructions: a.instructions
-      }))
-    } else {
+    const agentsToStart = getTaskDispatchTargets(task)
+    if (agentsToStart.length === 0) {
       return res.status(400).json({ error: 'No agents specified in task (no @mentions and task.agents is empty)' })
     }
 
-    // 根据协作模式启动会话
-    const sessionIds: string[] = []
-    const errors: { agentId: string; error: string }[] = []
+    const acceptance = acceptTaskDispatch(task, agentsToStart)
 
-    if (task.collaborationMode === 'sequential') {
-      // 顺序执行：依次创建会话
-      for (const agentConfig of agentsToStart) {
-        try {
-          const message = agentConfig.instructions || `执行任务: ${task.name}\n\n描述: ${task.description || '无'}`
-          console.log(`[Task Start] Spawning session for agent: ${agentConfig.agentId}`)
-          
-          const result = await sessions_spawn({
-            agentId: agentConfig.agentId,
-            task: task.name,
-            message
-          })
-          sessionIds.push(result.sessionKey)
-          console.log(`[Task Start] Session created: ${result.sessionKey}`)
-        } catch (err: any) {
-          console.error(`[Task Start] Failed to spawn agent ${agentConfig.agentId}:`, err.message)
-          errors.push({ agentId: agentConfig.agentId, error: err.message })
-        }
-      }
-    } else if (task.collaborationMode === 'parallel') {
-      // 并行执行：同时创建多个会话
-      const promises = agentsToStart.map(async (agentConfig) => {
-        try {
-          const message = agentConfig.instructions || `并行执行任务: ${task.name}\n\n描述: ${task.description || '无'}`
-          console.log(`[Task Start] Spawning session for agent: ${agentConfig.agentId}`)
-          
-          const result = await sessions_spawn({
-            agentId: agentConfig.agentId,
-            task: task.name,
-            message
-          })
-          console.log(`[Task Start] Session created: ${result.sessionKey}`)
-          return { sessionKey: result.sessionKey, error: null }
-        } catch (err: any) {
-          console.error(`[Task Start] Failed to spawn agent ${agentConfig.agentId}:`, err.message)
-          return { sessionKey: null, error: { agentId: agentConfig.agentId, error: err.message } }
-        }
-      })
-      
-      const results = await Promise.all(promises)
-      for (const r of results) {
-        if (r.sessionKey) {
-          sessionIds.push(r.sessionKey)
-        } else if (r.error) {
-          errors.push(r.error)
-        }
-      }
-    }
-
-    // 更新任务状态和会话 ID
-    const updatedTask = taskDb.update(id, {
-      status: sessionIds.length > 0 ? 'distributed' : 'failed',
-      sessionIds
-    })
-
-    // 返回结果，包含可能的错误信息
-    res.json({
-      ...updatedTask,
+    return res.status(202).json({
+      ...acceptance.task,
       _startResult: {
-        totalAgents: agentsToStart.length,
-        successfulSessions: sessionIds.length,
-        errors: errors.length > 0 ? errors : undefined
+        accepted: true,
+        mode: acceptance.mode,
+        totalAgents: acceptance.totalAgents,
+        successfulSessions: 0,
+        pending: acceptance.pending
       }
     })
   } catch (error: any) {
@@ -247,13 +164,22 @@ taskRouter.post('/:id/pause', async (req, res) => {
   try {
     const { id } = req.params
 
-    const task = taskDb.update(id, { status: 'paused' })
-
+    const task = tasksDb.findById(id)
     if (!task) {
       return res.status(404).json({ error: 'Task not found' })
     }
 
-    res.json(task)
+    const taskStatus = getTaskStatus(task)
+    if (!canPauseTask(taskStatus)) {
+      return res.status(409).json({
+        error: `Task cannot be paused from status "${taskStatus}". Once dispatch starts, pause is no longer available.`
+      })
+    }
+
+    const updatedTask = tasksDb.update(id, { status: 'paused' })
+    publishTaskUpdated(updatedTask)
+
+    res.json(updatedTask)
   } catch (error: any) {
     console.error('[Task POST :id/pause] Error:', error)
     res.status(500).json({ error: error.message })
@@ -281,15 +207,22 @@ taskRouter.put('/:id/schedule', async (req, res) => {
 
     // 验证时间格式 (HH:MM)
     if (config.mode === 'fixed') {
-      const timeMatch = config.fixedTime.match(/^([01]?[0-9]|2[0-3]):([0-5][0-9])$/)
+      const timeMatch = config.fixedTime!.match(/^([01]?[0-9]|2[0-3]):([0-5][0-9])$/)
       if (!timeMatch) {
         return res.status(400).json({ error: 'Invalid time format, use HH:MM (e.g., 09:30)' })
       }
     }
 
-    const task = taskDb.findById(id)
+    const task = tasksDb.findById(id)
     if (!task) {
       return res.status(404).json({ error: 'Task not found' })
+    }
+
+    const taskStatus = getTaskStatus(task)
+    if (config.enabled && !canScheduleTask(taskStatus)) {
+      return res.status(409).json({
+        error: `Task cannot be scheduled from status "${taskStatus}"`
+      })
     }
 
     // 如果启用定时，创建 cron job
@@ -298,13 +231,15 @@ taskRouter.put('/:id/schedule', async (req, res) => {
       if (!result.success) {
         return res.status(500).json({ error: result.error || 'Failed to create scheduled task' })
       }
-      
+
       // 返回更新后的任务
-      const updatedTask = taskDb.findById(id)
+      const updatedTask = tasksDb.findById(id)
+      publishTaskUpdated(updatedTask)
       res.json(updatedTask)
     } else {
       // 如果禁用定时，更新配置但不创建 cron job
-      const updatedTask = taskDb.setSchedule(id, { ...config, enabled: false })
+      const updatedTask = tasksDb.setSchedule(id, { ...config, enabled: false })
+      publishTaskUpdated(updatedTask)
       res.json(updatedTask)
     }
   } catch (error: any) {
@@ -318,7 +253,7 @@ taskRouter.delete('/:id/schedule', async (req, res) => {
   try {
     const { id } = req.params
 
-    const task = taskDb.findById(id)
+    const task = tasksDb.findById(id)
     if (!task) {
       return res.status(404).json({ error: 'Task not found' })
     }
@@ -331,10 +266,11 @@ taskRouter.delete('/:id/schedule', async (req, res) => {
       }
     } else {
       // 直接清除配置
-      taskDb.clearSchedule(id)
+      tasksDb.clearSchedule(id)
     }
 
-    const updatedTask = taskDb.findById(id)
+    const updatedTask = tasksDb.findById(id)
+    publishTaskUpdated(updatedTask)
     res.json(updatedTask)
   } catch (error: any) {
     console.error('[Task DELETE :id/schedule] Error:', error)
@@ -352,7 +288,7 @@ taskRouter.post('/:id/trigger', async (req, res) => {
       return res.status(500).json({ error: result.error || 'Failed to trigger task' })
     }
 
-    const updatedTask = taskDb.findById(id)
+    const updatedTask = tasksDb.findById(id)
     res.json({
       ...updatedTask,
       _triggerResult: result

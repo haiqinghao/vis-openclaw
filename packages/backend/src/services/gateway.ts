@@ -13,6 +13,8 @@ interface AgentInfo {
   name: string
   description: string
   status: string
+  workspace?: string
+  model?: string
   avatar?: string | null
   emoji?: string | null
 }
@@ -26,8 +28,8 @@ export class GatewayProxy {
   private cache: NodeCache
 
   constructor() {
-    // 缓存 60 秒
-    this.cache = new NodeCache({ stdTTL: 60 })
+    // 缓存 60 秒，最多 100 条
+    this.cache = new NodeCache({ stdTTL: 60, maxKeys: 100 })
   }
 
   // 获取会话列表

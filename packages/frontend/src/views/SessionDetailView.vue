@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref, computed, nextTick, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useSessionStore, type SessionMessage } from '@/stores/session'
+import { useSessionStore } from '@/stores/session'
 import { useAgentStore } from '@/stores/agent'
 
 const route = useRoute()

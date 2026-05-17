@@ -1,9 +1,8 @@
-import { exec } from 'child_process'
-import { promisify } from 'util'
-import { taskDb, ScheduledConfig } from './database.js'
-import { sessions_spawn } from './openclaw-cli.js'
-
-const execAsync = promisify(exec)
+import { tasksDb } from '../db/tasks-db.js'
+import type { ScheduledConfig } from '../db/tasks-db.js'
+import { runOpenClawCli } from './openclaw-command.js'
+import { broadcast } from './websocket.js'
+import { TASK_DISPATCH_MODE, dispatchTaskToGatewaySessions, getTaskDispatchTargets } from './task-dispatch.js'
 
 /**
  * Cron 服务 - 管理 OpenClaw 定时任务
@@ -17,16 +16,24 @@ function generateCronExpression(config: ScheduledConfig): string {
 
   if (config.mode === 'interval') {
     const { value, unit } = config.interval!
+    if (!Number.isInteger(value) || value <= 0) {
+      return ''
+    }
     if (unit === 'minutes') {
+      if (value > 59) return ''
       // 每 N 分钟执行: */N * * * *
       return `*/${value} * * * *`
     } else if (unit === 'hours') {
+      if (value > 23) return ''
       // 每 N 小时执行: 0 */N * * *
       return `0 */${value} * * *`
     }
   } else if (config.mode === 'fixed') {
     // 定点执行: 每天 HH:MM
     const [hours, minutes] = config.fixedTime!.split(':').map(Number)
+    if (!Number.isInteger(hours) || !Number.isInteger(minutes) || hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+      return ''
+    }
     return `${minutes} ${hours} * * *`
   }
 
@@ -36,7 +43,7 @@ function generateCronExpression(config: ScheduledConfig): string {
 // 计算下次运行时间
 function calculateNextRun(config: ScheduledConfig): string {
   const now = new Date()
-  
+
   if (config.mode === 'interval') {
     const { value, unit } = config.interval!
     if (unit === 'minutes') {
@@ -52,34 +59,20 @@ function calculateNextRun(config: ScheduledConfig): string {
       now.setDate(now.getDate() + 1)
     }
   }
-  
+
   return now.toISOString()
 }
 
 /**
  * 调用 OpenClaw CLI 的封装
  */
-async function callOpenClawCli(args: string, timeoutMs: number = 30000): Promise<string> {
-  try {
-    console.log(`[Cron Service] Running: openclaw ${args}`)
-    const { stdout, stderr } = await execAsync(`openclaw ${args}`, { 
-      timeout: timeoutMs,
-      maxBuffer: 1024 * 1024
-    })
-    
-    if (stdout && stdout.trim()) {
-      return stdout
-    }
-    if (stderr && stderr.trim()) {
-      return stderr
-    }
-    return ''
-  } catch (error: any) {
-    console.error('[Cron Service] CLI Error:', error.message)
-    if (error.stdout) return error.stdout
-    if (error.stderr) return error.stderr
-    throw error
-  }
+async function callOpenClawCli(args: string[], timeoutMs: number = 30000): Promise<string> {
+  const output = await runOpenClawCli(args, {
+    timeoutMs,
+    maxBuffer: 1024 * 1024,
+    logPrefix: 'Cron Service'
+  })
+  return output || ''
 }
 
 /**
@@ -88,7 +81,7 @@ async function callOpenClawCli(args: string, timeoutMs: number = 30000): Promise
  */
 export async function createScheduledTask(taskId: string, config: ScheduledConfig): Promise<{ success: boolean; cronId?: string; error?: string }> {
   try {
-    const task = taskDb.findById(taskId)
+    const task = tasksDb.findById(taskId)
     if (!task) {
       return { success: false, error: 'Task not found' }
     }
@@ -105,13 +98,21 @@ export async function createScheduledTask(taskId: string, config: ScheduledConfi
     // OpenClaw 使用 gateway config 来管理 cron jobs
     // 格式: openclaw gateway config cron add <id> <schedule> <command>
     const command = `task-trigger ${taskId}`
-    
+
     console.log(`[Cron Service] Creating cron job: ${cronId} with schedule: ${cronExpr}`)
-    
+
     // 调用 OpenClaw CLI 添加 cron job
     // 使用 gateway call 来添加定时任务
-    const result = await callOpenClawCli(`gateway config cron add "${cronId}" "${cronExpr}" "${command}"`)
-    
+    const result = await callOpenClawCli([
+      'gateway',
+      'config',
+      'cron',
+      'add',
+      cronId,
+      cronExpr,
+      command
+    ])
+
     console.log(`[Cron Service] Cron job created: ${result}`)
 
     // 计算下次运行时间
@@ -123,8 +124,8 @@ export async function createScheduledTask(taskId: string, config: ScheduledConfi
       cronId,
       nextRun
     }
-    
-    taskDb.setSchedule(taskId, updatedConfig)
+
+    tasksDb.setSchedule(taskId, updatedConfig)
 
     return { success: true, cronId }
   } catch (error: any) {
@@ -138,22 +139,28 @@ export async function createScheduledTask(taskId: string, config: ScheduledConfi
  */
 export async function deleteScheduledTask(taskId: string): Promise<{ success: boolean; error?: string }> {
   try {
-    const task = taskDb.findById(taskId)
+    const task = tasksDb.findById(taskId)
     if (!task || !task.scheduledConfig?.cronId) {
       return { success: false, error: 'No scheduled config found' }
     }
 
     const cronId = task.scheduledConfig.cronId
-    
+
     console.log(`[Cron Service] Deleting cron job: ${cronId}`)
-    
+
     // 调用 OpenClaw CLI 删除 cron job
-    const result = await callOpenClawCli(`gateway config cron remove "${cronId}"`)
-    
+    const result = await callOpenClawCli([
+      'gateway',
+      'config',
+      'cron',
+      'remove',
+      cronId
+    ])
+
     console.log(`[Cron Service] Cron job deleted: ${result}`)
 
     // 清除任务的定时配置
-    taskDb.clearSchedule(taskId)
+    tasksDb.clearSchedule(taskId)
 
     return { success: true }
   } catch (error: any) {
@@ -168,70 +175,49 @@ export async function deleteScheduledTask(taskId: string): Promise<{ success: bo
  */
 export async function triggerScheduledTask(taskId: string): Promise<{ success: boolean; error?: string }> {
   try {
-    const task = taskDb.findById(taskId)
+    const task = tasksDb.findById(taskId)
     if (!task) {
       return { success: false, error: 'Task not found' }
     }
 
     console.log(`[Cron Service] Triggering task: ${task.name}`)
 
-    // 从 description 中提取 @mentions
-    const mentionedAgents = extractMentions(task.description || '')
-    
-    // 确定要启动的 agent 列表
-    let agentsToStart: { agentId: string; instructions?: string }[] = []
-    
-    if (mentionedAgents.length > 0) {
-      agentsToStart = mentionedAgents.map(agentId => ({
-        agentId,
-        instructions: task.description
-      }))
-    } else if (task.agents && task.agents.length > 0) {
-      agentsToStart = task.agents.map(a => ({
-        agentId: a.agentId,
-        instructions: a.instructions
-      }))
-    } else {
+    const agentsToStart = getTaskDispatchTargets(task)
+    if (agentsToStart.length === 0) {
       return { success: false, error: 'No agents specified in task' }
     }
 
-    // 启动任务（与 task.ts 中的 startTask 类似）
-    const sessionIds: string[] = []
-    const errors: { agentId: string; error: string }[] = []
+    const dispatchingTask = tasksDb.update(taskId, {
+      status: 'dispatching',
+      sessionIds: [],
+      dispatchMode: TASK_DISPATCH_MODE,
+      dispatchErrors: [],
+      dispatchedAt: undefined
+    })
+    if (dispatchingTask) broadcast('task:updated', dispatchingTask, 'tasks')
 
-    for (const agentConfig of agentsToStart) {
-      try {
-        const message = agentConfig.instructions || `执行定时任务: ${task.name}\n\n描述: ${task.description || '无'}`
-        console.log(`[Cron Service] Spawning session for agent: ${agentConfig.agentId}`)
-        
-        const result = await sessions_spawn({
-          agentId: agentConfig.agentId,
-          task: task.name,
-          message
-        })
-        sessionIds.push(result.sessionKey)
-        console.log(`[Cron Service] Session created: ${result.sessionKey}`)
-      } catch (err: any) {
-        console.error(`[Cron Service] Failed to spawn agent ${agentConfig.agentId}:`, err.message)
-        errors.push({ agentId: agentConfig.agentId, error: err.message })
-      }
-    }
+    const result = await dispatchTaskToGatewaySessions(dispatchingTask || task, agentsToStart)
+
 
     // 更新任务状态
     const now = new Date().toISOString()
     const nextRun = task.scheduledConfig ? calculateNextRun(task.scheduledConfig) : undefined
-    
-    taskDb.update(taskId, {
-      status: sessionIds.length > 0 ? 'running' : 'failed',
-      sessionIds
+
+    const updatedTask = tasksDb.update(taskId, {
+      status: result.sessionIds.length > 0 ? 'distributed' : 'failed',
+      sessionIds: result.sessionIds,
+      dispatchMode: result.mode,
+      dispatchErrors: result.errors,
+      dispatchedAt: now
     })
-    taskDb.updateScheduleRun(taskId, now, nextRun)
+    if (updatedTask) broadcast('task:updated', updatedTask, 'tasks')
+    tasksDb.updateScheduleRun(taskId, now, nextRun)
 
-    console.log(`[Cron Service] Task triggered successfully, ${sessionIds.length} sessions started`)
+    console.log(`[Cron Service] Task trigger sent to ${result.sessionIds.length} existing session(s)`)
 
-    return { 
-      success: sessionIds.length > 0,
-      error: errors.length > 0 ? errors.map(e => e.error).join('; ') : undefined
+    return {
+      success: result.sessionIds.length > 0,
+      error: result.errors.length > 0 ? result.errors.map(e => e.error).join('; ') : undefined
     }
   } catch (error: any) {
     console.error('[Cron Service] Trigger error:', error.message)
@@ -240,32 +226,10 @@ export async function triggerScheduledTask(taskId: string): Promise<{ success: b
 }
 
 /**
- * 从文本中提取 @mentions
- */
-function extractMentions(text: string): string[] {
-  const mentions: string[] = []
-  
-  // 匹配 @agentName 格式
-  const simpleMentionRegex = /@([a-zA-Z0-9_-]+)/g
-  let match
-  while ((match = simpleMentionRegex.exec(text)) !== null) {
-    mentions.push(match[1])
-  }
-  
-  // 匹配 @[agentId] 格式
-  const bracketMentionRegex = /@\[([^\]]+)\]/g
-  while ((match = bracketMentionRegex.exec(text)) !== null) {
-    mentions.push(match[1])
-  }
-  
-  return [...new Set(mentions)]
-}
-
-/**
  * 获取所有活跃的定时任务
  */
 export function getActiveScheduledTasks(): { taskId: string; config: ScheduledConfig }[] {
-  const tasks = taskDb.findAll()
+  const tasks = tasksDb.findAll()
   return tasks
     .filter(t => t.scheduledConfig?.enabled)
     .map(t => ({

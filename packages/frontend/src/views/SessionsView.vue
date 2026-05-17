@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useSessionStore } from '@/stores/session'
 import { useAgentStore } from '@/stores/agent'
 import { ElMessage } from 'element-plus'
-import axios from 'axios'
+import * as sessionApi from '@/api/sessions'
 
 const sessionStore = useSessionStore()
 const agentStore = useAgentStore()
@@ -22,8 +22,8 @@ const sessionsList = computed(() => {
   return sessionStore.sessions.map(session => {
     // 判断是否是 subagent：检查 kind 字段，或 key 格式
     const keyParts = (session.key || session.id).split(':')
-    const isSubagent = session.kind === 'subagent' || 
-                       keyParts.length >= 4 || 
+    const isSubagent = session.kind === 'subagent' ||
+                       keyParts.length >= 4 ||
                        (session.key && session.key.includes('subage'))
     const agent = agentStore.agents.find(a => a.id === session.agentId)
     return {
@@ -55,8 +55,7 @@ async function selectSession(sessionId: string) {
   loadingMessages.value = true
   messageInput.value = ''
   try {
-    const response = await axios.get(`/api/sessions/${sessionId}/messages`, { params: { limit: 100 } })
-    const messages = response.data || []
+    const messages = await sessionApi.fetchMessages(sessionId)
     sessionMessages.value = messages.sort((a: any, b: any) => {
       const timeA = new Date(a.timestamp || a.createdAt || 0).getTime()
       const timeB = new Date(b.timestamp || b.createdAt || 0).getTime()
@@ -73,15 +72,12 @@ async function selectSession(sessionId: string) {
 // 发送消息
 async function sendMessage() {
   if (!selectedSessionKey.value || !messageInput.value.trim() || sendingMessage.value) return
-  
+
   sendingMessage.value = true
   try {
-    await axios.post(`/api/sessions/${selectedSessionKey.value}/send`, {
-      message: messageInput.value.trim()
-    })
+    await sessionApi.sendMessage(selectedSessionKey.value, messageInput.value.trim())
     messageInput.value = ''
-    const response = await axios.get(`/api/sessions/${selectedSessionKey.value}/messages`, { params: { limit: 100 } })
-    sessionMessages.value = response.data || []
+    sessionMessages.value = await sessionApi.fetchMessages(selectedSessionKey.value)
     ElMessage.success('消息已发送')
     scrollMessagesToBottom()
   } catch (e: any) {
@@ -147,9 +143,9 @@ onMounted(async () => {
         <div class="panel-body">
           <el-empty v-if="sessionsList.length === 0" description="暂无会话" :image-size="60" />
           <div v-else class="session-list">
-            <div 
-              v-for="session in sessionsList" 
-              :key="session.id" 
+            <div
+              v-for="session in sessionsList"
+              :key="session.id"
               class="session-card"
               :class="{ active: selectedSessionKey === session.id, subagent: session.isSubagent }"
               @click="selectSession(session.id)"
@@ -206,10 +202,10 @@ onMounted(async () => {
                 </div>
               </div>
             </div>
-            
+
             <!-- 发送消息区域 -->
             <div class="message-input-area">
-              <el-input 
+              <el-input
                 v-model="messageInput"
                 type="textarea"
                 :rows="2"
@@ -218,10 +214,10 @@ onMounted(async () => {
               />
               <div class="input-actions">
                 <span class="hint">Ctrl+Enter 发送</span>
-                <el-button 
-                  type="primary" 
-                  size="small" 
-                  :loading="sendingMessage" 
+                <el-button
+                  type="primary"
+                  size="small"
+                  :loading="sendingMessage"
                   :disabled="!messageInput.trim()"
                   @click="sendMessage"
                 >

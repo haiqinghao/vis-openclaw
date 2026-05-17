@@ -14,7 +14,9 @@ const menuItems = [
   { path: '/dashboard', icon: 'DataAnalysis', label: '监测面板' },
   { path: '/agents', icon: 'User', label: 'Agent 管理' },
   { path: '/sessions', icon: 'ChatLineRound', label: '会话管理' },
-  { path: '/commands', icon: 'Document', label: '命令配置' }
+  { path: '/commands', icon: 'Document', label: '命令配置' },
+  { path: '/game-display', icon: 'Monitor', label: '游戏界面' },
+  { path: '/game', icon: 'Picture', label: '游戏界面编辑' }
 ]
 
 const activeMenu = computed(() => route.path)

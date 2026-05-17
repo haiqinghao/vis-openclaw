@@ -1,84 +1,104 @@
 import { Router } from 'express'
-import { taskDb } from '../services/database.js'
+import { tasksDb } from '../db/tasks-db.js'
 import { sessions_list, agents_list } from '../services/openclaw-cli.js'
+import { getAllAgentStatuses, type AgentState } from '../services/agent-status.js'
 
 export const dashboardRouter = Router()
 
-// 获取仪表盘统计数据
+const ACTIVE_AGENT_STATES = new Set<AgentState>([
+  'running',
+  'thinking',
+  'generating',
+  'tool_calling',
+  'waiting_approval',
+  'finalizing',
+  'busy'
+])
+const ACTIVE_TASK_STATUSES = new Set(['dispatching', 'distributed', 'running'])
+
+function getActiveAgentStatuses() {
+  const now = Date.now()
+  return getAllAgentStatuses().filter((entry) =>
+    ACTIVE_AGENT_STATES.has(entry.state) && now - entry.timestamp < 5 * 60 * 1000
+  )
+}
+
 dashboardRouter.get('/stats', async (_req, res) => {
   try {
-    // 从 OpenClaw Gateway 获取实时数据
-    const [gatewayAgents, gatewaySessions, localTasks] = await Promise.all([
+    const [agents, sessions, tasks] = await Promise.all([
       agents_list(),
       sessions_list(),
-      taskDb.findAll()
+      tasksDb.findAll()
     ])
+    const activeStatuses = getActiveAgentStatuses()
 
-    // 计算活跃会话数（有最近更新的会话）
-    const activeSessions = gatewaySessions.filter((s: any) => {
-      const ageMinutes = (Date.now() - s.updatedAt) / 1000 / 60
-      return ageMinutes < 30  // 30分钟内更新过算活跃
+    res.json({
+      agentCount: agents.length,
+      sessionCount: sessions.length,
+      taskCount: tasks.length,
+      runningCount: activeStatuses.length,
+      onlineAgentCount: agents.filter((agent: any) => agent.status === 'online').length,
+      activeSessionCount: activeStatuses.length
     })
-
-    const stats = {
-      agentCount: gatewayAgents.length > 0 ? gatewayAgents.length : 3, // 默认显示3个（main/dev/business）
-      sessionCount: gatewaySessions.length,
-      taskCount: localTasks.length,
-      runningCount: activeSessions.length,  // 改为计算活跃会话
-      onlineAgentCount: gatewayAgents.filter((a: any) => a.status === 'online').length,
-      activeSessionCount: activeSessions.length
-    }
-
-    res.json(stats)
   } catch (error: any) {
     console.error('[Dashboard GET /stats] Error:', error)
-    // 返回默认值
     res.json({
-      agentCount: 3,
-      sessionCount: 1,
+      agentCount: 0,
+      sessionCount: 0,
       taskCount: 0,
-      runningCount: 1,
-      onlineAgentCount: 3,
-      activeSessionCount: 1
+      runningCount: 0,
+      onlineAgentCount: 0,
+      activeSessionCount: 0
     })
   }
 })
 
-// 获取仪表盘概览数据
 dashboardRouter.get('/overview', async (_req, res) => {
   try {
-    const [gatewayAgents, gatewaySessions, localTasks] = await Promise.all([
+    const [agents, sessions, tasks] = await Promise.all([
       agents_list(),
       sessions_list(),
-      taskDb.findAll()
+      tasksDb.findAll()
     ])
+    const activeStatuses = getActiveAgentStatuses()
+    const activeSessionKeys = new Set(
+      activeStatuses.flatMap((entry) => [entry.sessionKey, entry.sessionId].filter(Boolean))
+    )
 
-    // 获取活跃会话详情
-    const activeSessions = gatewaySessions.filter((s: any) => {
-      const ageMinutes = (Date.now() - s.updatedAt) / 1000 / 60
-      return ageMinutes < 30
-    })
+    const activeSessions = sessions
+      .filter((session: any) => activeSessionKeys.has(session.key) || activeSessionKeys.has(session.sessionId))
+      .map((session: any) => {
+        const state = activeStatuses.find((entry) =>
+          entry.sessionKey === session.key || entry.sessionId === session.sessionId
+        )
+        return {
+          ...session,
+          state: state?.state,
+          detail: state?.detail,
+          lastEventAt: state?.timestamp
+        }
+      })
 
-    // 获取运行中的任务及其关联的 Agent
-    const runningTasks = localTasks
-      .filter((t: any) => t.status === 'running')
+    const runningTasks = tasks
+      .filter((task: any) => ACTIVE_TASK_STATUSES.has(task.status))
       .map((task: any) => ({
         ...task,
-        agents: task.agents?.map((ta: any) => {
-          const agent = gatewayAgents.find((a: any) => a.id === ta.agentId)
+        agents: task.agents?.map((taskAgent: any) => {
+          const agent = agents.find((candidate: any) => candidate.id === taskAgent.agentId)
+          const active = activeStatuses.some((entry) => entry.agentId === taskAgent.agentId)
           return {
-            ...ta,
-            status: agent?.status || 'unknown'
+            ...taskAgent,
+            status: active ? 'running' : agent?.status || 'unknown'
           }
         })
       }))
 
     res.json({
       stats: {
-        agentCount: gatewayAgents.length || 3,
-        sessionCount: gatewaySessions.length,
-        taskCount: localTasks.length,
-        runningCount: activeSessions.length || runningTasks.length
+        agentCount: agents.length,
+        sessionCount: sessions.length,
+        taskCount: tasks.length,
+        runningCount: activeStatuses.length || runningTasks.length
       },
       activeSessions,
       runningTasks

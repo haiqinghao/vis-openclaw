@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import axios from 'axios'
+import * as agentApi from '@/api/agents'
 
 export interface Agent {
   id: string
@@ -10,9 +10,15 @@ export interface Agent {
   model?: string
   avatar?: string | null
   emoji?: string | null
+  avatarUnit?: string | null
   systemPrompt?: string
   workspace?: string
-  hasActiveSession?: boolean  // 是否有活跃会话
+  hasActiveSession?: boolean
+  agentState?: string
+  stateDetail?: string | null
+  stateSource?: string | null
+  lastEventAt?: number | null
+  stateAgeMs?: number | null
   createdAt: string
   updatedAt: string
 }
@@ -30,15 +36,46 @@ export const useAgentStore = defineStore('agent', () => {
     agents.value.filter(a => a.status === 'offline')
   )
 
+  function dedupeAgentsById(agentList: Agent[]) {
+    const result: Agent[] = []
+    const indexById = new Map<string, number>()
+
+    for (const agent of agentList) {
+      if (!agent?.id) continue
+
+      const existingIndex = indexById.get(agent.id)
+      if (existingIndex === undefined) {
+        indexById.set(agent.id, result.length)
+        result.push(agent)
+      } else {
+        result[existingIndex] = { ...result[existingIndex], ...agent }
+      }
+    }
+
+    return result
+  }
+
+  function upsertAgent(agent: Agent) {
+    const firstIndex = agents.value.findIndex(a => a.id === agent.id)
+    const withoutSameAgent = agents.value.filter(a => a.id !== agent.id)
+
+    if (firstIndex === -1) {
+      agents.value = dedupeAgentsById([...withoutSameAgent, agent])
+      return
+    }
+
+    const nextAgents = [...withoutSameAgent]
+    nextAgents.splice(firstIndex, 0, { ...agents.value[firstIndex], ...agent })
+    agents.value = dedupeAgentsById(nextAgents)
+  }
+
   async function fetchAgents() {
     loading.value = true
     error.value = null
     try {
-      const response = await axios.get('/api/agents')
-      agents.value = response.data
+      agents.value = dedupeAgentsById(await agentApi.fetchAgents())
     } catch (e: any) {
       error.value = e.message
-      console.error('[AgentStore] Fetch agents failed:', e)
     } finally {
       loading.value = false
     }
@@ -48,12 +85,11 @@ export const useAgentStore = defineStore('agent', () => {
     loading.value = true
     error.value = null
     try {
-      const response = await axios.post('/api/agents', agent)
-      agents.value.push(response.data)
-      return response.data
+      const created = await agentApi.createAgent(agent)
+      upsertAgent(created)
+      return created
     } catch (e: any) {
       error.value = e.message
-      console.error('[AgentStore] Create agent failed:', e)
       throw e
     } finally {
       loading.value = false
@@ -64,15 +100,11 @@ export const useAgentStore = defineStore('agent', () => {
     loading.value = true
     error.value = null
     try {
-      const response = await axios.put(`/api/agents/${id}`, updates)
-      const index = agents.value.findIndex(a => a.id === id)
-      if (index !== -1) {
-        agents.value[index] = response.data
-      }
-      return response.data
+      const updated = await agentApi.updateAgent(id, updates)
+      upsertAgent(updated)
+      return updated
     } catch (e: any) {
       error.value = e.message
-      console.error('[AgentStore] Update agent failed:', e)
       throw e
     } finally {
       loading.value = false
@@ -83,24 +115,34 @@ export const useAgentStore = defineStore('agent', () => {
     loading.value = true
     error.value = null
     try {
-      await axios.delete(`/api/agents/${id}`)
+      await agentApi.deleteAgent(id)
       agents.value = agents.value.filter(a => a.id !== id)
     } catch (e: any) {
       error.value = e.message
-      console.error('[AgentStore] Delete agent failed:', e)
       throw e
     } finally {
       loading.value = false
     }
   }
 
-  function setAgentLocal(agent: Agent) {
-    const index = agents.value.findIndex(a => a.id === agent.id)
+  function updateAgentStatus(agentId: string, status: Agent['status']) {
+    const index = agents.value.findIndex(a => a.id === agentId)
+    if (index !== -1) agents.value[index].status = status
+  }
+
+  function updateAgentRuntimeState(agentId: string, runtime: Partial<Agent>) {
+    const index = agents.value.findIndex(a => a.id === agentId)
     if (index !== -1) {
-      agents.value[index] = agent
-    } else {
-      agents.value.push(agent)
+      const incomingEventAt = typeof runtime.lastEventAt === 'number' ? runtime.lastEventAt : null
+      const currentEventAt = typeof agents.value[index].lastEventAt === 'number' ? agents.value[index].lastEventAt : null
+      if (incomingEventAt !== null && currentEventAt !== null && incomingEventAt < currentEventAt) return
+
+      agents.value[index] = { ...agents.value[index], ...runtime }
     }
+  }
+
+  function syncAgentToLocal(agent: Agent) {
+    upsertAgent(agent)
   }
 
   function getAgentById(id: string) {
@@ -108,16 +150,8 @@ export const useAgentStore = defineStore('agent', () => {
   }
 
   return {
-    agents,
-    loading,
-    error,
-    onlineAgents,
-    offlineAgents,
-    fetchAgents,
-    createAgent,
-    updateAgent,
-    deleteAgent,
-    setAgentLocal,
-    getAgentById
+    agents, loading, error, onlineAgents, offlineAgents,
+    fetchAgents, createAgent, updateAgent, deleteAgent,
+    updateAgentStatus, updateAgentRuntimeState, syncAgentToLocal, getAgentById
   }
 })

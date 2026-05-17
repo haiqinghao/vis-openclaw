@@ -1,6 +1,6 @@
 @echo off
 echo ========================================
-echo   VIS OpenClaw V0.9 - Stop Services
+echo   VIS OpenClaw V1.1 - Stop Services
 echo ========================================
 echo.
 

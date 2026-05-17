@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <!-- 像素风建筑精灵（基地） -->
+  <!-- 底座 -->
+  <rect x="2" y="18" width="20" height="4" fill="#1a1a2e"/>
+  <rect x="3" y="19" width="18" height="2" fill="#2a2a4e"/>
+
+  <!-- 主体 -->
+  <rect x="4" y="8" width="16" height="10" fill="#00ff88"/>
+  <rect x="5" y="9" width="14" height="8" fill="#00aa55"/>
+
+  <!-- 门 -->
+  <rect x="9" y="12" width="6" height="6" fill="#0a0a0f"/>
+  <rect x="10" y="13" width="4" height="4" fill="#1a1a2e"/>
+
+  <!-- 窗户 -->
+  <rect x="6" y="10" width="2" height="2" fill="#00aaff"/>
+  <rect x="16" y="10" width="2" height="2" fill="#00aaff"/>
+
+  <!-- 顶部天线 -->
+  <rect x="11" y="2" width="2" height="6" fill="#00ff88"/>
+  <rect x="10" y="1" width="4" height="2" fill="#ffaa00"/>
+
+  <!-- 发光效果 -->
+  <rect x="10" y="0" width="4" height="1" fill="#ffaa00" opacity="0.5"/>
+</svg>

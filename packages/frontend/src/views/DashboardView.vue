@@ -2,9 +2,11 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useAgentStore } from '@/stores/agent'
 import { useSessionStore } from '@/stores/session'
-import { useTaskStore } from '@/stores/task'
+import { useTaskStore, type Task, type TaskStatus } from '@/stores/task'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import axios from 'axios'
+import * as gatewayApi from '@/api/gateway'
+import * as sessionApi from '@/api/sessions'
+import * as taskApi from '@/api/tasks'
 
 const agentStore = useAgentStore()
 const sessionStore = useSessionStore()
@@ -29,7 +31,7 @@ const sendingMessage = ref(false)
 
 // 创建任务对话框
 const dialogVisible = ref(false)
-const taskForm = ref({ name: '', description: '' })
+const taskForm = ref({ name: '', description: '', avatarType: 'sheep' as 'sheep' | 'gold' })
 const dialogLoading = ref(false)
 const descriptionInputRef = ref<any>(null)
 
@@ -48,8 +50,8 @@ const currentScheduleTask = ref<any>(null)
 interface ScheduledConfig {
   enabled: boolean
   mode: 'interval' | 'fixed'
-  interval?: { value: number; unit: 'minutes' | 'hours' }
-  fixedTime?: string
+  interval: { value: number; unit: 'minutes' | 'hours' }
+  fixedTime: string
 }
 
 // 解析描述中已选中的 Agent
@@ -63,11 +65,58 @@ const selectedAgents = computed(() => {
 })
 
 // 统计数据
+const ACTIVE_TASK_STATUSES = new Set<TaskStatus>(['dispatching', 'distributed', 'running'])
+const STARTABLE_TASK_STATUSES = new Set<TaskStatus>(['pending', 'paused', 'failed', 'stale'])
+const CONFIGURABLE_TASK_STATUSES = new Set<TaskStatus>(['pending', 'paused', 'scheduled', 'failed', 'stale'])
+const TASK_STATUS_LABELS: Record<string, string> = {
+  pending: '待分发',
+  paused: '已暂停',
+  scheduled: '已定时',
+  dispatching: '分发中',
+  distributed: '已分发',
+  running: '运行中',
+  completed: '已完成',
+  failed: '失败',
+  stale: '已失联'
+}
+const TASK_STATUS_TAG_TYPES: Record<string, 'success' | 'warning' | 'info' | 'danger'> = {
+  pending: 'info',
+  paused: 'info',
+  scheduled: 'warning',
+  dispatching: 'warning',
+  distributed: 'success',
+  running: 'success',
+  completed: 'success',
+  failed: 'danger',
+  stale: 'warning'
+}
+
+function getTaskStatus(task: Task | any): TaskStatus {
+  return (task.status || 'pending') as TaskStatus
+}
+
+function getTaskStatusLabel(task: Task | any): string {
+  const status = getTaskStatus(task)
+  return TASK_STATUS_LABELS[status] || status
+}
+
+function getTaskStatusType(task: Task | any) {
+  return TASK_STATUS_TAG_TYPES[getTaskStatus(task)] || 'info'
+}
+
+function isTaskStartable(task: Task | any): boolean {
+  return STARTABLE_TASK_STATUSES.has(getTaskStatus(task))
+}
+
+function isTaskConfigurable(task: Task | any): boolean {
+  return CONFIGURABLE_TASK_STATUSES.has(getTaskStatus(task))
+}
+
 const stats = computed(() => ({
   agentCount: agentStore.agents.length,
   sessionCount: sessionStore.sessions.length,
   taskCount: taskStore.tasks.length,
-  distributedCount: taskStore.tasks.filter(t => t.status === 'distributed').length
+  distributedCount: taskStore.tasks.filter(t => ACTIVE_TASK_STATUSES.has(t.status)).length
 }))
 
 // 按创建时间倒序排列的任务列表
@@ -84,8 +133,8 @@ const allSessions = computed(() => {
   return sessionStore.sessions.map(session => {
     // 判断是否是 subagent：检查 kind 字段，或 key 格式
     const keyParts = (session.key || session.id).split(':')
-    const isSubagent = session.kind === 'subagent' || 
-                       keyParts.length >= 4 || 
+    const isSubagent = session.kind === 'subagent' ||
+                       keyParts.length >= 4 ||
                        (session.key && session.key.includes('subage'))
     const agent = agentStore.agents.find(a => a.id === session.agentId)
     return {
@@ -140,11 +189,16 @@ function formatMessageTime(dateStr: string) {
   })
 }
 
+function getTaskDispatchError(task: Task | any): string {
+  const firstError = task?.dispatchErrors?.[0]?.error
+  return typeof firstError === 'string' ? firstError : ''
+}
+
 // 检查网关状态
 async function checkGatewayStatus() {
   try {
-    const response = await axios.get('/api/gateway/status', { timeout: 3000 })
-    gatewayStatus.value = response.data.status === 'ok' ? 'connected' : 'disconnected'
+    const result = await gatewayApi.getGatewayStatus()
+    gatewayStatus.value = result.status === 'ok' ? 'connected' : 'disconnected'
   } catch {
     gatewayStatus.value = 'disconnected'
   }
@@ -154,7 +208,7 @@ async function checkGatewayStatus() {
 async function handleStartGateway() {
   gatewayLoading.value = true
   try {
-    await axios.post('/api/gateway/start')
+    await gatewayApi.startGateway()
     ElMessage.success('网关启动中...')
     setTimeout(() => checkGatewayStatus(), 3000)
   } catch (e: any) {
@@ -172,7 +226,7 @@ async function handleRestartGateway() {
     })
     gatewayLoading.value = true
     gatewayStatus.value = 'unknown'
-    await axios.post('/api/gateway/restart')
+    await gatewayApi.restartGateway()
     ElMessage.success('网关重启中...')
     setTimeout(() => checkGatewayStatus(), 5000)
   } catch (e: any) {
@@ -187,9 +241,9 @@ function getTaskAgents(task: any) {
   if (!task.agents || task.agents.length === 0) return []
   return task.agents.map((ta: any) => {
     const agent = agentStore.agents.find(a => a.id === ta.agentId)
-    return { 
-      ...ta, 
-      name: agent?.name || ta.agentId, 
+    return {
+      ...ta,
+      name: agent?.name || ta.agentId,
       status: agent?.status || 'offline',
       model: agent?.model,
       avatar: agent?.avatar,
@@ -214,9 +268,7 @@ async function selectSession(sessionId: string) {
   loadingMessages.value = true
   messageInput.value = '' // 切换会话时清空输入框
   try {
-    const response = await axios.get(`/api/sessions/${sessionId}/messages`, { params: { limit: 100 } })
-    // 按时间正序排列：最新消息在最下面
-    const messages = response.data || []
+    const messages = await sessionApi.fetchMessages(sessionId)
     sessionMessages.value = messages.sort((a: any, b: any) => {
       const timeA = new Date(a.timestamp || a.createdAt || 0).getTime()
       const timeB = new Date(b.timestamp || b.createdAt || 0).getTime()
@@ -234,17 +286,13 @@ async function selectSession(sessionId: string) {
 // 发送消息
 async function sendMessage() {
   if (!selectedSessionKey.value || !messageInput.value.trim() || sendingMessage.value) return
-  
+
   sendingMessage.value = true
   try {
-    await axios.post(`/api/sessions/${selectedSessionKey.value}/send`, {
-      message: messageInput.value.trim()
-    })
+    await sessionApi.sendMessage(selectedSessionKey.value, messageInput.value.trim())
     messageInput.value = ''
     // 重新获取消息列表
-    const response = await axios.get(`/api/sessions/${selectedSessionKey.value}/messages`, { params: { limit: 100 } })
-    // 按时间正序排列：最新消息在最下面
-    const messages = response.data || []
+    const messages = await sessionApi.fetchMessages(selectedSessionKey.value)
     sessionMessages.value = messages.sort((a: any, b: any) => {
       const timeA = new Date(a.timestamp || a.createdAt || 0).getTime()
       const timeB = new Date(b.timestamp || b.createdAt || 0).getTime()
@@ -274,7 +322,13 @@ function scrollMessagesToBottom() {
 async function handleStartTask(task: any) {
   try {
     await taskStore.startTask(task.id)
-    ElMessage.success('任务已启动')
+    ElMessage.success('正在分发到 OpenClaw 会话')
+    setTimeout(async () => {
+      await taskStore.fetchTasks()
+      const refreshedTask = taskStore.getTaskById(task.id)
+      const dispatchError = getTaskDispatchError(refreshedTask)
+      if (dispatchError) ElMessage.error(`分发失败：${dispatchError}`)
+    }, 2000)
   } catch (e: any) {
     ElMessage.error(e.message || '启动失败')
   }
@@ -295,8 +349,13 @@ async function handleDeleteTask(task: any) {
 
 // 打开定时配置对话框
 function openScheduleDialog(task: any) {
+  if (!isTaskConfigurable(task)) {
+    ElMessage.warning('任务已进入分发链路，不能再调整定时配置')
+    return
+  }
+
   currentScheduleTask.value = task
-  
+
   // 如果已有配置，使用现有配置
   if (task.scheduledConfig) {
     scheduleForm.value = {
@@ -314,14 +373,14 @@ function openScheduleDialog(task: any) {
       fixedTime: '09:00'
     }
   }
-  
+
   scheduleDialogVisible.value = true
 }
 
 // 保存定时配置
 async function handleSaveSchedule() {
   if (!currentScheduleTask.value) return
-  
+
   scheduleDialogLoading.value = true
   try {
     const config = {
@@ -330,12 +389,12 @@ async function handleSaveSchedule() {
       interval: scheduleForm.value.mode === 'interval' ? scheduleForm.value.interval : undefined,
       fixedTime: scheduleForm.value.mode === 'fixed' ? scheduleForm.value.fixedTime : undefined
     }
-    
-    await axios.put(`/api/tasks/${currentScheduleTask.value.id}/schedule`, config)
-    
+
+    await taskApi.setSchedule(currentScheduleTask.value.id, config)
+
     // 刷新任务列表
     await taskStore.fetchTasks()
-    
+
     ElMessage.success('定时配置已保存')
     scheduleDialogVisible.value = false
   } catch (e: any) {
@@ -351,12 +410,12 @@ async function handleClearSchedule(task: any) {
     await ElMessageBox.confirm(`确定取消任务 "${task.name}" 的定时配置？`, '确认', {
       confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning'
     })
-    
-    await axios.delete(`/api/tasks/${task.id}/schedule`)
-    
+
+    await taskApi.clearSchedule(task.id)
+
     // 刷新任务列表
     await taskStore.fetchTasks()
-    
+
     ElMessage.success('定时配置已取消')
   } catch (e: any) {
     if (e !== 'cancel') ElMessage.error(e.response?.data?.error || '取消失败')
@@ -366,41 +425,41 @@ async function handleClearSchedule(task: any) {
 // 格式化定时信息显示
 function formatScheduleInfo(task: any): string {
   if (!task.scheduledConfig) return ''
-  
+
   const config = task.scheduledConfig
   if (!config.enabled) return '定时已关闭'
-  
+
   if (config.mode === 'interval') {
     return `每隔 ${config.interval?.value} ${config.interval?.unit === 'minutes' ? '分钟' : '小时'} 启动`
   } else if (config.mode === 'fixed') {
     return `每天 ${config.fixedTime} 启动`
   }
-  
+
   return ''
 }
 
 // 打开创建对话框
 function openCreateDialog() {
-  taskForm.value = { name: '', description: '' }
+  taskForm.value = { name: '', description: '', avatarType: 'sheep' }
   dialogVisible.value = true
 }
 
 // 点击 agent 名称，插入到描述框光标位置
 function insertAgentMention(agent: any) {
   const mention = `@${agent.name} `
-  
+
   // 尝试从 el-input 组件获取内部 textarea
   let textarea: HTMLTextAreaElement | null = null
   if (descriptionInputRef.value?.$el) {
     textarea = descriptionInputRef.value.$el.querySelector('textarea')
   }
-  
+
   if (textarea) {
     const start = textarea.selectionStart
     const end = textarea.selectionEnd
     const text = taskForm.value.description
     taskForm.value.description = text.substring(0, start) + mention + text.substring(end)
-    
+
     // 更新光标位置
     setTimeout(() => {
       textarea?.focus()
@@ -425,8 +484,8 @@ function getAgentSessions(agentId: string) {
     .map(session => {
       // 判断是否是 subagent：检查 kind 字段，或 key 格式是否为四段（agent:xxx:subagent:xxx）
       const keyParts = (session.key || session.id).split(':')
-      const isSubagent = session.kind === 'subagent' || 
-                         keyParts.length >= 4 || 
+      const isSubagent = session.kind === 'subagent' ||
+                         keyParts.length >= 4 ||
                          (session.key && session.key.includes('subage'))  // CLI 截断了 'subagent' 为 'subage'
       const agent = agentStore.agents.find(a => a.id === session.agentId)
       return {
@@ -452,7 +511,7 @@ function getAgentSessions(agentId: string) {
 }
 
 // 拖动调整面板宽度
-function startResize(e: MouseEvent) {
+function startResize() {
   isResizing.value = true
   document.addEventListener('mousemove', handleResize)
   document.addEventListener('mouseup', stopResize)
@@ -492,14 +551,13 @@ async function handleCreateTask() {
       const agent = agentStore.agents.find(a => a.name === name || a.id === name)
       if (agent) agentIds.push(agent.id)
     }
-    
+
     await taskStore.createTask({
       name: taskForm.value.name,
       description: taskForm.value.description,
       agents: agentIds.map(id => ({ agentId: id, role: 'primary' as const })),
-      status: 'pending',
-      sessionIds: [],
-      collaborationMode: 'sequential'
+      collaborationMode: 'sequential',
+      avatarType: taskForm.value.avatarType
     })
     ElMessage.success('任务创建成功')
     dialogVisible.value = false
@@ -554,7 +612,7 @@ onUnmounted(() => {
       </div>
       <div class="stat-card">
         <div class="value">{{ stats.distributedCount }}</div>
-        <div class="label">已分发任务</div>
+        <div class="label">分发链路任务</div>
       </div>
     </div>
 
@@ -570,9 +628,9 @@ onUnmounted(() => {
           <el-empty v-if="taskStore.tasks.length === 0" description="暂无任务" :image-size="80" />
           <div v-else class="task-cards-container">
             <!-- 任务卡片（外层）- 左右两栏布局 -->
-            <div 
-              v-for="task in sortedTasks" 
-              :key="task.id" 
+            <div
+              v-for="task in sortedTasks"
+              :key="task.id"
               class="task-card-outer"
               :class="task.status"
             >
@@ -580,27 +638,28 @@ onUnmounted(() => {
               <div class="task-card-left">
                 <div class="task-info">
                   <span class="task-name">{{ task.name }}</span>
-                  <el-tag 
-                    :type="task.status === 'distributed' ? 'success' : task.status === 'failed' ? 'danger' : task.status === 'scheduled' ? 'warning' : 'info'" 
+                  <el-tag
+                    :type="getTaskStatusType(task)"
                     size="small"
                   >
-                    {{ task.status === 'pending' ? '待分发' : task.status === 'distributed' ? '已分发' : task.status === 'failed' ? '失败' : task.status }}
+                    {{ getTaskStatusLabel(task) }}
                     <el-icon v-if="task.scheduledConfig?.enabled" style="margin-left: 4px;"><svg viewBox="0 0 1024 1024" width="12" height="12"><path d="M512 64C264.6 64 64 264.6 64 512s200.6 448 448 448 448-200.6 448-448S759.4 64 512 64zm0 820c-205.4 0-372-166.6-372-372s166.6-372 372-372 372 166.6 372 372-166.6 372-372 372z" fill="currentColor"/><path d="M686.7 638.6L544.1 535.5V288c0-4.4-3.6-8-8-8H488c-4.4 0-8 3.6-8 8v275.4c0 2.6 1.2 5 3.3 6.5l165.4 120.6c3.6 2.6 8.6 1.8 11.2-1.7l28.6-39c2.6-4.1 1.8-9.1-1.8-11.6z" fill="currentColor"/></svg></el-icon>
                   </el-tag>
                 </div>
                 <div class="task-meta">
                   <span class="task-desc">{{ task.description || '无描述' }}</span>
                   <span v-if="task.scheduledConfig?.enabled" class="task-schedule">{{ formatScheduleInfo(task) }}</span>
+                  <span v-if="getTaskDispatchError(task)" class="task-dispatch-error">{{ getTaskDispatchError(task) }}</span>
                   <span class="task-time">{{ formatTime(task.createdAt) }}</span>
                 </div>
                 <div class="task-actions">
-                  <el-button v-if="task.status === 'pending'" type="success" size="small" @click="handleStartTask(task)">分发</el-button>
-                  <el-button 
-                    type="warning" 
-                    size="small" 
-                    link 
+                  <el-button v-if="isTaskStartable(task)" type="success" size="small" title="通过 OpenClaw Gateway 投递到已有会话，不启动新 agent" @click="handleStartTask(task)">分发</el-button>
+                  <el-button
+                    type="warning"
+                    size="small"
+                    link
                     @click="openScheduleDialog(task)"
-                    :disabled="task.status === 'distributed'"
+                    :disabled="!isTaskConfigurable(task)"
                   >
                     <el-icon><svg viewBox="0 0 1024 1024"><path d="M512 64C264.6 64 64 264.6 64 512s200.6 448 448 448 448-200.6 448-448S759.4 64 512 64zm0 820c-205.4 0-372-166.6-372-372s166.6-372 372-372 372 166.6 372 372-166.6 372-372 372z" fill="currentColor"/><path d="M686.7 638.6L544.1 535.5V288c0-4.4-3.6-8-8-8H488c-4.4 0-8 3.6-8 8v275.4c0 2.6 1.2 5 3.3 6.5l165.4 120.6c3.6 2.6 8.6 1.8 11.2-1.7l28.6-39c2.6-4.1 1.8-9.1-1.8-11.6z" fill="currentColor"/></svg></el-icon>
                     定时
@@ -608,13 +667,13 @@ onUnmounted(() => {
                   <el-button type="danger" size="small" link @click="handleDeleteTask(task)">删除</el-button>
                 </div>
               </div>
-              
+
               <!-- 右侧：Agent 卡片列表 -->
               <div class="task-card-right">
                 <div class="agent-cards-container" v-if="getTaskAgents(task).length > 0">
-                  <div 
-                    v-for="taskAgent in getTaskAgents(task)" 
-                    :key="taskAgent.agentId" 
+                  <div
+                    v-for="taskAgent in getTaskAgents(task)"
+                    :key="taskAgent.agentId"
                     class="agent-card-nested"
                   >
                     <div class="agent-card-header">
@@ -629,12 +688,12 @@ onUnmounted(() => {
                         <span class="agent-status" :class="taskAgent.status">{{ taskAgent.status }}</span>
                       </div>
                     </div>
-                    
+
                     <!-- 会话卡片（内层）- 嵌套在 Agent 卡片内 -->
                     <div class="session-cards-container" v-if="getAgentSessions(taskAgent.agentId).length > 0">
-                      <div 
-                        v-for="session in getAgentSessions(taskAgent.agentId)" 
-                        :key="session.id" 
+                      <div
+                        v-for="session in getAgentSessions(taskAgent.agentId)"
+                        :key="session.id"
                         class="session-card-nested"
                         :class="{ active: selectedSessionKey === session.id, subagent: session.isSubagent }"
                         @click="selectSession(session.id)"
@@ -657,10 +716,10 @@ onUnmounted(() => {
           </div>
         </div>
       </div>
-      
+
       <!-- 拖动调整条 -->
-      <div 
-        class="resize-handle" 
+      <div
+        class="resize-handle"
         :class="{ active: isResizing }"
         @mousedown="startResize"
       ></div>
@@ -697,7 +756,7 @@ onUnmounted(() => {
                 </div>
               </div>
             </div>
-            
+
             <!-- 发送消息区域 -->
             <div class="message-input-area">
               <el-input
@@ -710,10 +769,10 @@ onUnmounted(() => {
               />
               <div class="input-actions">
                 <span class="hint">Ctrl+Enter 发送</span>
-                <el-button 
-                  type="primary" 
-                  size="small" 
-                  :loading="sendingMessage" 
+                <el-button
+                  type="primary"
+                  size="small"
+                  :loading="sendingMessage"
                   :disabled="!messageInput.trim()"
                   @click="sendMessage"
                 >
@@ -732,19 +791,34 @@ onUnmounted(() => {
         <el-form-item label="任务名称" required>
           <el-input v-model="taskForm.name" placeholder="请输入任务名称" />
         </el-form-item>
+        <el-form-item label="虚拟形象">
+          <el-select v-model="taskForm.avatarType" placeholder="选择形象" style="width: 100%">
+            <el-option value="sheep" label="🐑 羊">
+              <span>🐑 羊</span>
+            </el-option>
+            <el-option value="gold" label="💎 金子">
+              <span>💎 金子</span>
+            </el-option>
+          </el-select>
+          <div class="avatar-preview" v-if="taskForm.avatarType">
+            <span class="preview-hint">将在游戏界面显示: </span>
+            <span class="preview-icon">{{ taskForm.avatarType === 'sheep' ? '🐑' : '💎' }}</span>
+            <span class="preview-name">{{ taskForm.avatarType === 'sheep' ? '羊' : '金子' }}</span>
+          </div>
+        </el-form-item>
         <el-form-item label="描述">
-          <el-input 
+          <el-input
             ref="descriptionInputRef"
-            v-model="taskForm.description" 
-            type="textarea" 
-            :rows="3" 
+            v-model="taskForm.description"
+            type="textarea"
+            :rows="3"
             placeholder="使用 @agent名 提及 Agent"
           />
           <div class="agent-mentions">
             <div class="mention-row">
               <span class="hint">可用 Agent：</span>
-              <el-tag 
-                v-for="agent in agentStore.agents" 
+              <el-tag
+                v-for="agent in agentStore.agents"
                 :key="agent.id"
                 size="small"
                 class="agent-tag"
@@ -756,8 +830,8 @@ onUnmounted(() => {
             </div>
             <div class="mention-row" v-if="selectedAgents.length > 0">
               <span class="hint selected-hint">已选中：</span>
-              <el-tag 
-                v-for="agent in selectedAgents" 
+              <el-tag
+                v-for="agent in selectedAgents"
                 :key="agent.id"
                 size="small"
                 :type="agent.notFound ? 'danger' : 'success'"
@@ -773,7 +847,7 @@ onUnmounted(() => {
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="dialogVisible.value = false">取消</el-button>
+        <el-button @click="dialogVisible = false">取消</el-button>
         <el-button type="primary" :loading="dialogLoading" @click="handleCreateTask">创建</el-button>
       </template>
     </el-dialog>
@@ -784,18 +858,18 @@ onUnmounted(() => {
         <el-form-item label="启用定时">
           <el-switch v-model="scheduleForm.enabled" />
         </el-form-item>
-        
+
         <el-form-item label="定时模式">
           <el-radio-group v-model="scheduleForm.mode" :disabled="!scheduleForm.enabled">
             <el-radio value="interval">间隔启动</el-radio>
             <el-radio value="fixed">定点启动</el-radio>
           </el-radio-group>
         </el-form-item>
-        
+
         <el-form-item v-if="scheduleForm.mode === 'interval'" label="时间间隔">
-          <el-input-number 
-            v-model="scheduleForm.interval.value" 
-            :min="1" 
+          <el-input-number
+            v-model="scheduleForm.interval.value"
+            :min="1"
             :max="999"
             :disabled="!scheduleForm.enabled"
             style="width: 120px"
@@ -805,7 +879,7 @@ onUnmounted(() => {
             <el-option value="hours" label="小时" />
           </el-select>
         </el-form-item>
-        
+
         <el-form-item v-if="scheduleForm.mode === 'fixed'" label="启动时间">
           <el-time-select
             v-model="scheduleForm.fixedTime"
@@ -817,12 +891,12 @@ onUnmounted(() => {
           />
         </el-form-item>
       </el-form>
-      
+
       <template #footer>
         <el-button @click="scheduleDialogVisible = false">取消</el-button>
-        <el-button 
-          v-if="currentScheduleTask?.scheduledConfig?.enabled" 
-          type="danger" 
+        <el-button
+          v-if="currentScheduleTask?.scheduledConfig?.enabled"
+          type="danger"
           @click="handleClearSchedule(currentScheduleTask)"
         >
           取消定时
@@ -882,22 +956,22 @@ onUnmounted(() => {
   border-radius: 50%;
 }
 
-.status.connected { 
-  background: rgba(34, 197, 94, 0.15); 
-  color: var(--accent-green); 
+.status.connected {
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--accent-green);
 }
-.status.connected .dot { 
-  background: var(--accent-green); 
+.status.connected .dot {
+  background: var(--accent-green);
   box-shadow: 0 0 8px var(--accent-green);
 }
-.status.disconnected { 
-  background: rgba(239, 68, 68, 0.15); 
-  color: var(--accent-red); 
+.status.disconnected {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--accent-red);
 }
 .status.disconnected .dot { background: var(--accent-red); }
-.status.unknown { 
-  background: rgba(100, 116, 139, 0.15); 
-  color: var(--text-secondary); 
+.status.unknown {
+  background: rgba(100, 116, 139, 0.15);
+  color: var(--text-secondary);
 }
 .status.unknown .dot { background: var(--text-muted); animation: blink 1s infinite; }
 
@@ -955,8 +1029,8 @@ onUnmounted(() => {
 
 /* 左侧嵌套卡片面板 */
 .nested-cards-panel {
-  width: 50px;
-  min-width: 50px;
+  width: 600px;
+  min-width: 300px;
   max-width: 800px;
   background: var(--bg-card);
   border-radius: var(--radius-lg);
@@ -1058,7 +1132,12 @@ onUnmounted(() => {
   gap: 0;
 }
 
-.task-card-outer.distributed { border-left-color: var(--accent-green); }
+.task-card-outer.dispatching,
+.task-card-outer.scheduled,
+.task-card-outer.stale { border-left-color: var(--accent-yellow); }
+.task-card-outer.distributed,
+.task-card-outer.running,
+.task-card-outer.completed { border-left-color: var(--accent-green); }
 .task-card-outer.failed { border-left-color: var(--accent-red); }
 
 /* 左侧：任务信息 */
@@ -1103,6 +1182,13 @@ onUnmounted(() => {
 .task-card-left .task-time {
   font-size: 11px;
   color: var(--text-muted);
+}
+
+.task-card-left .task-dispatch-error {
+  font-size: 11px;
+  color: var(--accent-red);
+  line-height: 1.35;
+  word-break: break-word;
 }
 
 .task-card-left .task-actions {
@@ -1202,13 +1288,13 @@ onUnmounted(() => {
   border-radius: var(--radius-sm);
 }
 
-.agent-card-header .agent-status.online { 
-  background: rgba(34, 197, 94, 0.2); 
-  color: var(--accent-green); 
+.agent-card-header .agent-status.online {
+  background: rgba(34, 197, 94, 0.2);
+  color: var(--accent-green);
 }
-.agent-card-header .agent-status.offline { 
-  background: rgba(100, 116, 139, 0.2); 
-  color: var(--text-muted); 
+.agent-card-header .agent-status.offline {
+  background: rgba(100, 116, 139, 0.2);
+  color: var(--text-muted);
 }
 
 /* ============ 会话卡片（内层）样式 ============ */
@@ -1228,28 +1314,28 @@ onUnmounted(() => {
   transition: all 0.2s;
 }
 
-.session-card-nested:hover { 
-  background: var(--bg-card-hover); 
+.session-card-nested:hover {
+  background: var(--bg-card-hover);
   border-color: var(--accent-blue);
 }
 
-.session-card-nested.active { 
-  background: var(--bg-card-hover); 
+.session-card-nested.active {
+  background: var(--bg-card-hover);
   border-color: var(--accent-blue);
   box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
 }
 
-.session-card-nested.subagent { 
-  background: rgba(245, 158, 11, 0.1); 
+.session-card-nested.subagent {
+  background: rgba(245, 158, 11, 0.1);
   border-left: 3px solid var(--accent-yellow);
 }
 
-.session-card-nested.subagent:hover { 
-  background: rgba(245, 158, 11, 0.15); 
+.session-card-nested.subagent:hover {
+  background: rgba(245, 158, 11, 0.15);
 }
 
-.session-card-nested.subagent.active { 
-  background: rgba(245, 158, 11, 0.15); 
+.session-card-nested.subagent.active {
+  background: rgba(245, 158, 11, 0.15);
   border-color: var(--accent-yellow);
   box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.3);
 }
@@ -1412,7 +1498,7 @@ onUnmounted(() => {
 /* 响应式 */
 @media (max-width: 1200px) {
   .stats { grid-template-columns: repeat(2, 1fr); }
-  .main-content { 
+  .main-content {
     flex-direction: column;
   }
   .nested-cards-panel {
@@ -1473,5 +1559,28 @@ onUnmounted(() => {
 .agent-mentions .no-agent {
   font-size: 12px;
   color: #c0c4cc;
+}
+
+/* 形象预览样式 */
+.avatar-preview {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.avatar-preview .preview-hint {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.avatar-preview .preview-icon {
+  font-size: 20px;
+}
+
+.avatar-preview .preview-name {
+  font-size: 12px;
+  color: var(--accent-blue);
+  font-weight: 500;
 }
 </style>

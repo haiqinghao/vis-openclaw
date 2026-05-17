@@ -1,16 +1,47 @@
 <script setup lang="ts">
-import { onMounted, ref, computed, watch } from 'vue'
+import { onMounted, ref, computed } from 'vue'
 import { useAgentStore, type Agent } from '@/stores/agent'
+import { useSessionStore } from '@/stores/session'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import axios from 'axios'
+import { AGENT_AVATAR_UNITS } from '@/config/agentAvatars'
+import * as agentApi from '@/api/agents'
 
 const agentStore = useAgentStore()
+const sessionStore = useSessionStore()
+
+// 获取 Agent 的会话状态标签
+function getAgentSessionLabel(agentId: string): string {
+  // 从 session store 中查找该 agent 的活跃会话状态
+  for (const session of sessionStore.sessions) {
+    if (session.agentId === agentId && session.sessionState) {
+      const state = session.sessionState
+      switch (state) {
+        case 'thinking': return '💭 思考中'
+        case 'generating': return '✍️ 生成中'
+        case 'tool_calling': return '🔧 工具调用中'
+        case 'complete': return '✅ 已完成'
+        case 'idle': return '⏸️ 空闲'
+      }
+    }
+  }
+  return ''
+}
+
+function getAgentSessionStateClass(agentId: string): string {
+  for (const session of sessionStore.sessions) {
+    if (session.agentId === agentId && session.sessionState) {
+      return `state-${session.sessionState}`
+    }
+  }
+  return ''
+}
 
 // 选中的 Agent
 const selectedAgent = ref<Agent | null>(null)
 
 // 创建弹窗
 const createDialogVisible = ref(false)
+const creatingAgent = ref(false)
 
 // 文件列表（包含 exists 字段）
 const mdFiles = ref<{ name: string; size: number; modified: string; exists: boolean }[]>([])
@@ -42,15 +73,12 @@ const form = ref({
   description: '',
   model: '',
   systemPrompt: '',
-  workspace: ''
+  workspace: '',
+  avatarUnit: ''  // Agent 形象
 })
 
 // 计算 workspace 默认值
 const defaultWorkspace = computed(() => {
-  if (form.value.id) {
-    const cleanId = form.value.id.replace(/[^a-zA-Z0-9_-]/g, '-').toLowerCase()
-    return `C:\\Users\\49541\\.openclaw-${cleanId}\\workspace`
-  }
   return ''
 })
 
@@ -73,8 +101,7 @@ onMounted(async () => {
 async function fetchAvailableModels() {
   loadingModels.value = true
   try {
-    const response = await axios.get('/api/agents/models')
-    availableModels.value = response.data
+    availableModels.value = await agentApi.getAvailableModels()
     if (availableModels.value.length > 0 && !form.value.model) {
       form.value.model = availableModels.value[0]
     }
@@ -105,7 +132,8 @@ async function selectAgent(agent: Agent) {
     description: agent.description,
     model: agent.model || availableModels.value[0] || '',
     systemPrompt: agent.systemPrompt || '',
-    workspace: agent.workspace || ''
+    workspace: agent.workspace || '',
+    avatarUnit: agent.avatarUnit || ''
   }
   await fetchMdFiles()
 }
@@ -113,13 +141,13 @@ async function selectAgent(agent: Agent) {
 // 获取 .md 文件列表
 async function fetchMdFiles() {
   if (!selectedAgent.value) return
-  
+
   loadingFiles.value = true
   try {
-    const response = await axios.get(`/api/agents/${selectedAgent.value.id}/files`)
-    mdFiles.value = response.data.files || []
-    workspacePath.value = response.data.workspace || ''
-    
+    const result = await agentApi.getAgentFiles(selectedAgent.value.id)
+    mdFiles.value = result.files || []
+    workspacePath.value = result.workspace || ''
+
     // 默认选中第一个文件
     if (mdFiles.value.length > 0 && !currentFile.value) {
       await loadFile(mdFiles.value[0].name)
@@ -135,14 +163,14 @@ async function fetchMdFiles() {
 // 加载文件内容
 async function loadFile(fileName: string) {
   if (!selectedAgent.value) return
-  
+
   // 检查文件是否存在
   const fileInfo = mdFiles.value.find(f => f.name === fileName)
   if (!fileInfo?.exists) {
     ElMessage.warning('该文件不存在')
     return
   }
-  
+
   // 如果有未保存的修改，提示用户
   if (hasChanges.value && currentFile.value) {
     try {
@@ -159,13 +187,13 @@ async function loadFile(fileName: string) {
       return
     }
   }
-  
+
   loadingFiles.value = true
   try {
-    const response = await axios.get(`/api/agents/${selectedAgent.value.id}/files/${fileName}`)
+    const result = await agentApi.getAgentFile(selectedAgent.value.id, fileName)
     currentFile.value = fileName
-    fileContent.value = response.data.content
-    originalContent.value = response.data.content
+    fileContent.value = result.content
+    originalContent.value = result.content
   } catch (e: any) {
     console.error('[loadFile] Error:', e)
     ElMessage.error('加载文件失败')
@@ -177,12 +205,10 @@ async function loadFile(fileName: string) {
 // 保存文件
 async function saveFile() {
   if (!selectedAgent.value || !currentFile.value) return
-  
+
   savingFile.value = true
   try {
-    await axios.put(`/api/agents/${selectedAgent.value.id}/files/${currentFile.value}`, {
-      content: fileContent.value
-    })
+    await agentApi.saveAgentFile(selectedAgent.value.id, currentFile.value, fileContent.value)
     originalContent.value = fileContent.value
     ElMessage.success('文件保存成功')
   } catch (e: any) {
@@ -208,7 +234,8 @@ function openCreateDialog() {
     description: '',
     model: availableModels.value[0] || 'bailian/glm-5',
     systemPrompt: '',
-    workspace: ''
+    workspace: '',
+    avatarUnit: ''
   }
   createDialogVisible.value = true
 }
@@ -222,7 +249,10 @@ function onIdChange() {
 
 // 提交创建 Agent
 async function handleCreateAgent() {
+  if (creatingAgent.value) return
+
   try {
+    creatingAgent.value = true
     // 创建时，如果没有填写 workspace，使用默认值
     if (!form.value.workspace) {
       form.value.workspace = defaultWorkspace.value
@@ -234,20 +264,23 @@ async function handleCreateAgent() {
     await agentStore.fetchAgents()
   } catch (e: any) {
     ElMessage.error(e.response?.data?.error || e.message || '创建失败')
+  } finally {
+    creatingAgent.value = false
   }
 }
 
 // 更新 Agent
 async function handleUpdateAgent() {
   if (!selectedAgent.value) return
-  
+
   try {
     await agentStore.updateAgent(selectedAgent.value.id, {
       name: form.value.name,
       description: form.value.description,
       model: form.value.model,
       systemPrompt: form.value.systemPrompt,
-      workspace: form.value.workspace
+      workspace: form.value.workspace,
+      avatarUnit: form.value.avatarUnit  // 保存形象选择
     })
     ElMessage.success('Agent 更新成功')
     // 更新选中的 agent
@@ -288,7 +321,7 @@ async function handleDelete(agent: Agent) {
 // 启动 Agent 会话
 async function handleStartSession() {
   if (!selectedAgent.value) return
-  
+
   try {
     const { value: message } = await ElMessageBox.prompt(
       '输入首次对话消息（可选，默认为问候语）',
@@ -300,17 +333,15 @@ async function handleStartSession() {
         inputType: 'textarea'
       }
     ).catch(() => ({ value: null }))
-    
+
     if (message === null) return // 用户取消
-    
+
     startingSession.value = true
-    
-    const response = await axios.post(`/api/agents/${selectedAgent.value.id}/start-session`, {
-      message: message || '你好，请介绍一下你自己。'
-    })
-    
-    if (response.data.success) {
-      ElMessage.success(`会话已启动: ${response.data.sessionKey}`)
+
+    const result = await agentApi.startAgentSession(selectedAgent.value.id, message || '你好，请介绍一下你自己。')
+
+    if (result.success) {
+      ElMessage.success(`会话已启动: ${result.sessionKey}`)
       // 刷新会话列表
       await agentStore.fetchAgents()
     }
@@ -327,11 +358,11 @@ async function handleStartSession() {
 async function openCommConfigDialog() {
   commConfigVisible.value = true
   commConfigLoading.value = true
-  
+
   try {
-    const response = await axios.get('/api/agents/communication-config')
-    commEnabled.value = response.data.enabled ?? true
-    commAllowList.value = response.data.allowList || []
+    const result = await agentApi.getCommunicationConfig()
+    commEnabled.value = result.enabled ?? true
+    commAllowList.value = result.allowList || []
   } catch (e: any) {
     console.error('[Comm Config GET] Error:', e)
     ElMessage.error('获取配置失败')
@@ -343,14 +374,11 @@ async function openCommConfigDialog() {
 // 保存 Agent 间通信配置
 async function saveCommConfig() {
   commConfigSaving.value = true
-  
+
   try {
-    const response = await axios.put('/api/agents/communication-config', {
-      enabled: commEnabled.value,
-      allowList: commAllowList.value
-    })
-    
-    if (response.data.success) {
+    const result = await agentApi.updateCommunicationConfig(commEnabled.value, commAllowList.value)
+
+    if (result.success) {
       ElMessage.success('配置已保存，需要重启 Gateway 生效')
       commConfigVisible.value = false
     }
@@ -395,7 +423,7 @@ function toggleAllAgents() {
               </el-button>
             </div>
           </div>
-          
+
           <div class="agent-list">
             <div
               v-for="agent in agentStore.agents"
@@ -416,13 +444,16 @@ function toggleAllAgents() {
                 <div class="agent-status">
                   <span :class="['status-dot', agent.status]"></span>
                   <span class="status-text">{{ agent.status }}</span>
-                  <el-icon v-if="agent.hasActiveSession" class="session-icon" title="有活跃会话">
+                  <span v-if="getAgentSessionLabel(agent.id)" :class="['session-state-label', getAgentSessionStateClass(agent.id)]">
+                    {{ getAgentSessionLabel(agent.id) }}
+                  </span>
+                  <el-icon v-else-if="agent.hasActiveSession" class="session-icon" title="有活跃会话">
                     <ChatDotRound />
                   </el-icon>
                 </div>
               </div>
             </div>
-            
+
             <div v-if="agentStore.agents.length === 0" class="empty-list">
               暂无 Agent
             </div>
@@ -438,15 +469,15 @@ function toggleAllAgents() {
               <p>选择左侧的 Agent 查看详情</p>
               <p>或点击"创建"按钮创建新 Agent</p>
             </div>
-            
+
             <!-- 创建新 Agent 表单 -->
             <div v-else class="create-form">
               <h3>创建新 Agent</h3>
-              
+
               <el-form :model="form" label-width="100px" class="detail-form">
                 <el-form-item label="Agent ID">
-                  <el-input 
-                    v-model="form.id" 
+                  <el-input
+                    v-model="form.id"
                     placeholder="输入 Agent ID（字母、数字、下划线、连字符）"
                     @input="onIdChange"
                   >
@@ -457,15 +488,15 @@ function toggleAllAgents() {
                     </template>
                   </el-input>
                 </el-form-item>
-                
+
                 <el-form-item label="描述">
                   <el-input v-model="form.description" type="textarea" :rows="2" placeholder="Agent 描述" />
                 </el-form-item>
-                
+
                 <el-form-item label="模型">
-                  <el-select 
-                    v-model="form.model" 
-                    placeholder="选择模型" 
+                  <el-select
+                    v-model="form.model"
+                    placeholder="选择模型"
                     :loading="loadingModels"
                     style="width: 100%"
                   >
@@ -477,13 +508,13 @@ function toggleAllAgents() {
                     />
                   </el-select>
                 </el-form-item>
-                
+
                 <el-form-item label="工作目录">
                   <el-input v-model="form.workspace" :placeholder="defaultWorkspace || 'Agent 工作目录'" />
                 </el-form-item>
-                
+
                 <el-form-item>
-                  <el-button type="primary" @click="handleCreateAgent" :loading="agentStore.loading">
+                  <el-button type="primary" @click="handleCreateAgent" :loading="creatingAgent || agentStore.loading">
                     创建 Agent
                   </el-button>
                   <el-button @click="form.id = ''">取消</el-button>
@@ -491,27 +522,27 @@ function toggleAllAgents() {
               </el-form>
             </div>
           </template>
-          
+
           <!-- 选中 Agent 时显示详情 -->
           <template v-else>
             <div class="detail-header">
               <div class="detail-title">
                 <h3>{{ editingAgent?.name || selectedAgent.name }}</h3>
                 <div class="detail-actions">
-                  <el-button 
+                  <el-button
                     v-if="!selectedAgent.hasActiveSession"
-                    type="success" 
-                    size="small" 
+                    type="success"
+                    size="small"
                     @click="handleStartSession"
                     :loading="startingSession"
                   >
                     <el-icon><ChatDotRound /></el-icon>
                     启动对话
                   </el-button>
-                  <el-button 
+                  <el-button
                     v-else
-                    type="info" 
-                    size="small" 
+                    type="info"
+                    size="small"
                     plain
                     @click="handleStartSession"
                     :loading="startingSession"
@@ -526,7 +557,7 @@ function toggleAllAgents() {
                 </div>
               </div>
             </div>
-            
+
             <div class="detail-body">
               <!-- Agent 基本信息 -->
               <el-form :model="form" label-width="100px" class="detail-form">
@@ -542,13 +573,13 @@ function toggleAllAgents() {
                     </el-form-item>
                   </el-col>
                 </el-row>
-                
+
                 <el-row :gutter="20">
-                  <el-col :span="12">
+                  <el-col :span="8">
                     <el-form-item label="模型">
-                      <el-select 
-                        v-model="form.model" 
-                        placeholder="选择模型" 
+                      <el-select
+                        v-model="form.model"
+                        placeholder="选择模型"
                         :loading="loadingModels"
                         style="width: 100%"
                       >
@@ -561,7 +592,30 @@ function toggleAllAgents() {
                       </el-select>
                     </el-form-item>
                   </el-col>
-                  <el-col :span="12">
+                  <el-col :span="8">
+                    <el-form-item label="形象">
+                      <el-select
+                        v-model="form.avatarUnit"
+                        placeholder="选择游戏形象"
+                        style="width: 100%"
+                        clearable
+                      >
+                        <el-option
+                          v-for="unit in AGENT_AVATAR_UNITS"
+                          :key="unit.id"
+                          :label="`${unit.icon} ${unit.name}`"
+                          :value="unit.id"
+                        >
+                          <div style="display: flex; align-items: center; gap: 8px;">
+                            <span>{{ unit.icon }}</span>
+                            <span>{{ unit.name }}</span>
+                          </div>
+                        </el-option>
+                      </el-select>
+                      <div class="form-tip">在「游戏界面」中展示</div>
+                    </el-form-item>
+                  </el-col>
+                  <el-col :span="8">
                     <el-form-item label="状态">
                       <div class="status-display">
                         <span :class="['status-dot', selectedAgent.status]"></span>
@@ -570,29 +624,29 @@ function toggleAllAgents() {
                     </el-form-item>
                   </el-col>
                 </el-row>
-                
+
                 <el-form-item label="描述">
                   <el-input v-model="form.description" type="textarea" :rows="2" placeholder="Agent 描述" />
                 </el-form-item>
-                
+
                 <el-form-item label="工作目录">
                   <el-input v-model="form.workspace" disabled placeholder="Agent 工作目录" />
                 </el-form-item>
-                
+
                 <el-form-item>
                   <el-button type="primary" @click="handleUpdateAgent" :loading="agentStore.loading">
                     保存修改
                   </el-button>
                 </el-form-item>
               </el-form>
-              
+
               <!-- .md 文件编辑区域 -->
               <div class="md-editor-section">
                 <div class="section-header">
                   <h4>.md 文件编辑</h4>
                   <div class="file-tabs">
-                    <el-tooltip 
-                      v-for="file in mdFiles" 
+                    <el-tooltip
+                      v-for="file in mdFiles"
                       :key="file.name"
                       :content="file.exists ? file.name : '文件不存在'"
                       placement="top"
@@ -610,16 +664,16 @@ function toggleAllAgents() {
                     </el-tooltip>
                   </div>
                 </div>
-                
+
                 <div v-if="workspacePath" class="workspace-path">
                   工作目录: {{ workspacePath }}
                 </div>
-                
+
                 <div v-if="loadingFiles" class="loading-area">
                   <el-icon class="is-loading"><Loading /></el-icon>
                   <span>加载中...</span>
                 </div>
-                
+
                 <template v-else-if="currentFile">
                   <div class="editor-container">
                     <textarea
@@ -628,18 +682,18 @@ function toggleAllAgents() {
                       placeholder="Markdown 内容"
                     ></textarea>
                   </div>
-                  
+
                   <div class="editor-actions">
-                    <el-button 
-                      type="primary" 
-                      @click="saveFile" 
+                    <el-button
+                      type="primary"
+                      @click="saveFile"
                       :loading="savingFile"
                       :disabled="!hasChanges"
                     >
                       <el-icon><DocumentChecked /></el-icon>
                       保存
                     </el-button>
-                    <el-button 
+                    <el-button
                       @click="resetFile"
                       :disabled="!hasChanges"
                     >
@@ -649,7 +703,7 @@ function toggleAllAgents() {
                     <span v-if="hasChanges" class="unsaved-tip">有未保存的修改</span>
                   </div>
                 </template>
-                
+
                 <div v-else-if="mdFiles.length === 0" class="no-files">
                   <p>该 Agent 暂无 .md 文件</p>
                 </div>
@@ -659,7 +713,7 @@ function toggleAllAgents() {
         </el-col>
       </el-row>
     </div>
-    
+
     <!-- 创建 Agent 弹窗 -->
     <el-dialog
       v-model="createDialogVisible"
@@ -669,38 +723,38 @@ function toggleAllAgents() {
     >
       <el-form :model="form" label-width="100px">
         <el-form-item label="Agent ID" required>
-          <el-input 
-            v-model="form.id" 
+          <el-input
+            v-model="form.id"
             placeholder="只能包含字母、数字、下划线或连字符"
             @input="onIdChange"
           />
           <div class="form-tip">唯一标识符，创建后不可修改</div>
         </el-form-item>
-        
+
         <el-form-item label="名称">
           <el-input v-model="form.name" placeholder="Agent 显示名称（可选）" />
         </el-form-item>
-        
+
         <el-form-item label="模型" required>
           <el-select v-model="form.model" style="width: 100%">
-            <el-option 
-              v-for="model in availableModels" 
-              :key="model" 
-              :value="model" 
+            <el-option
+              v-for="model in availableModels"
+              :key="model"
+              :value="model"
               :label="model"
             />
           </el-select>
         </el-form-item>
-        
+
         <el-form-item label="描述">
-          <el-input 
-            v-model="form.description" 
-            type="textarea" 
-            :rows="2" 
-            placeholder="Agent 功能描述（可选）" 
+          <el-input
+            v-model="form.description"
+            type="textarea"
+            :rows="2"
+            placeholder="Agent 功能描述（可选）"
           />
         </el-form-item>
-        
+
         <el-form-item label="工作目录">
           <el-input v-model="form.workspace" placeholder="留空使用默认目录">
             <template #append>
@@ -709,9 +763,9 @@ function toggleAllAgents() {
           </el-input>
           <div class="form-tip" v-if="defaultWorkspace">默认: {{ defaultWorkspace }}</div>
         </el-form-item>
-        
-        <el-alert 
-          type="info" 
+
+        <el-alert
+          type="info"
           :closable="false"
           style="margin-top: 10px"
         >
@@ -720,19 +774,20 @@ function toggleAllAgents() {
           </template>
         </el-alert>
       </el-form>
-      
+
       <template #footer>
         <el-button @click="createDialogVisible = false">取消</el-button>
-        <el-button 
-          type="primary" 
-          :disabled="!form.id || !form.model"
+        <el-button
+          type="primary"
+          :loading="creatingAgent || agentStore.loading"
+          :disabled="!form.id || !form.model || creatingAgent"
           @click="handleCreateAgent"
         >
           创建
         </el-button>
       </template>
     </el-dialog>
-    
+
     <!-- Agent 间通信配置弹窗 -->
     <el-dialog
       v-model="commConfigVisible"
@@ -744,14 +799,14 @@ function toggleAllAgents() {
         <el-icon class="is-loading"><Loading /></el-icon>
         <span>加载中...</span>
       </div>
-      
+
       <template v-else>
         <el-form label-width="100px">
           <el-form-item label="启用通信">
             <el-switch v-model="commEnabled" />
             <div class="form-tip">允许 Agent 之间直接发送消息</div>
           </el-form-item>
-          
+
           <el-form-item label="允许列表">
             <div class="allow-list-header">
               <el-button size="small" link @click="toggleAllAgents">
@@ -760,9 +815,9 @@ function toggleAllAgents() {
               <span class="selected-count">已选 {{ commAllowList.length }} 个</span>
             </div>
             <el-checkbox-group v-model="commAllowList" class="allow-list">
-              <el-checkbox 
-                v-for="agent in agentStore.agents" 
-                :key="agent.id" 
+              <el-checkbox
+                v-for="agent in agentStore.agents"
+                :key="agent.id"
                 :label="agent.id"
                 :value="agent.id"
               >
@@ -772,18 +827,18 @@ function toggleAllAgents() {
             </el-checkbox-group>
           </el-form-item>
         </el-form>
-        
+
         <el-alert type="warning" :closable="false" style="margin-top: 10px">
           <template #title>
             配置保存后需要重启 Gateway 才能生效
           </template>
         </el-alert>
       </template>
-      
+
       <template #footer>
         <el-button @click="commConfigVisible = false">取消</el-button>
-        <el-button 
-          type="primary" 
+        <el-button
+          type="primary"
           :loading="commConfigSaving"
           @click="saveCommConfig"
         >
@@ -943,6 +998,51 @@ function toggleAllAgents() {
 
 .status-dot.busy {
   background-color: var(--accent-yellow);
+}
+
+/* 会话状态标签 */
+.session-state-label {
+  font-size: 11px;
+  margin-left: 4px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: all 0.3s ease;
+}
+
+.state-thinking {
+  background: rgba(139, 92, 246, 0.15);
+  color: #8b5cf6;
+  animation: pulse-thinking 1.5s ease-in-out infinite;
+}
+
+.state-generating {
+  background: rgba(59, 130, 246, 0.15);
+  color: #3b82f6;
+  animation: pulse-generating 1s ease-in-out infinite;
+}
+
+.state-tool_calling {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+}
+
+.state-complete {
+  background: rgba(34, 197, 94, 0.15);
+  color: #22c55e;
+}
+
+.state-idle {
+  color: var(--text-muted);
+}
+
+@keyframes pulse-thinking {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+@keyframes pulse-generating {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
 }
 
 .empty-list {

@@ -1,0 +1,291 @@
+/* 像素风游戏样式 */
+
+/* 像素字体后备 */
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=VT323&display=swap');
+
+/* 全局像素风格 */
+.pixel-border {
+  border: 3px solid;
+  border-image: repeating-linear-gradient(
+    90deg,
+    #00ff88 0px,
+    #00ff88 2px,
+    transparent 2px,
+    transparent 4px
+  ) 3;
+}
+
+/* 霓虹发光效果 */
+.neon-green {
+  color: #00ff88;
+  text-shadow: 0 0 5px #00ff88, 0 0 10px #00ff88, 0 0 20px #00ff88;
+}
+
+.neon-red {
+  color: #ff0066;
+  text-shadow: 0 0 5px #ff0066, 0 0 10px #ff0066, 0 0 20px #ff0066;
+}
+
+.neon-blue {
+  color: #00aaff;
+  text-shadow: 0 0 5px #00aaff, 0 0 10px #00aaff, 0 0 20px #00aaff;
+}
+
+/* 扫描线效果 */
+.scanlines::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(0, 0, 0, 0.1) 0px,
+    rgba(0, 0, 0, 0.1) 1px,
+    transparent 1px,
+    transparent 2px
+  );
+  pointer-events: none;
+}
+
+/* 像素进度条 */
+.pixel-progress {
+  height: 12px;
+  background: #1a1a2e;
+  border: 2px solid #00ff88;
+  position: relative;
+}
+
+.pixel-progress-bar {
+  height: 100%;
+  background: repeating-linear-gradient(
+    90deg,
+    #00ff88 0px,
+    #00ff88 4px,
+    #00aa55 4px,
+    #00aa55 8px
+  );
+  transition: width 0.3s;
+}
+
+/* 像素按钮 */
+.pixel-btn {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 10px;
+  padding: 8px 16px;
+  background: #1a1a2e;
+  border: 3px solid #00ff88;
+  color: #00ff88;
+  cursor: pointer;
+  position: relative;
+  transition: all 0.1s;
+}
+
+.pixel-btn:hover {
+  background: #00ff88;
+  color: #0a0a0f;
+}
+
+.pixel-btn:active {
+  transform: scale(0.95);
+}
+
+.pixel-btn.active {
+  background: #00ff88;
+  color: #0a0a0f;
+}
+
+/* 像素卡片 */
+.pixel-card {
+  font-family: 'VT323', monospace;
+  background: rgba(26, 26, 46, 0.9);
+  border: 2px solid #00ff88;
+  padding: 12px;
+  position: relative;
+}
+
+.pixel-card::before {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  right: -2px;
+  bottom: -2px;
+  border: 1px solid rgba(0, 255, 136, 0.3);
+  pointer-events: none;
+}
+
+/* 状态指示灯 */
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  animation: pulse 1.5s infinite;
+}
+
+.status-online {
+  background: #00ff88;
+  box-shadow: 0 0 6px #00ff88;
+}
+
+.status-offline {
+  background: #ff0066;
+  box-shadow: 0 0 6px #ff0066;
+}
+
+.status-busy {
+  background: #ffaa00;
+  box-shadow: 0 0 6px #ffaa00;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+/* 闪烁警告 */
+.warning-flash {
+  animation: warning-blink 0.5s infinite;
+}
+
+@keyframes warning-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* 浮动动画 */
+.float {
+  animation: float 3s ease-in-out infinite;
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+
+/* 游戏画布容器 */
+.game-canvas-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* UI 覆盖层 */
+.ui-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 100;
+}
+
+.ui-overlay > * {
+  pointer-events: auto;
+}
+
+/* 顶部状态栏 */
+.top-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  background: linear-gradient(to bottom, rgba(10, 10, 15, 0.9), transparent);
+  font-family: 'Press Start 2P', monospace;
+  font-size: 12px;
+}
+
+/* 底部操作栏 */
+.bottom-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 20px;
+  background: linear-gradient(to top, rgba(10, 10, 15, 0.9), transparent);
+}
+
+/* 侧边面板 */
+.side-panel {
+  position: absolute;
+  right: 0;
+  top: 50px;
+  bottom: 80px;
+  width: 250px;
+  background: rgba(10, 10, 15, 0.85);
+  border-left: 2px solid #00ff88;
+  padding: 10px;
+}
+
+/* 战斗日志 */
+.battle-log {
+  font-family: 'VT323', monospace;
+  font-size: 14px;
+  line-height: 1.5;
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+.battle-log-entry {
+  padding: 4px 8px;
+  border-bottom: 1px solid rgba(0, 255, 136, 0.2);
+}
+
+.battle-log-entry:last-child {
+  border-bottom: none;
+}
+
+/* Agent 卡片 */
+.agent-card {
+  width: 80px;
+  padding: 8px;
+  background: rgba(26, 26, 46, 0.9);
+  border: 2px solid #00ff88;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.agent-card:hover {
+  border-color: #00aaff;
+  transform: translateY(-2px);
+}
+
+.agent-card.selected {
+  border-color: #ffaa00;
+  background: rgba(255, 170, 0, 0.1);
+}
+
+.agent-avatar {
+  width: 32px;
+  height: 32px;
+  margin: 0 auto 4px;
+  background: #1a1a2e;
+  border: 1px solid #00ff88;
+}
+
+.agent-name {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 8px;
+  text-align: center;
+  color: #00ff88;
+}
+
+.agent-level {
+  font-family: 'VT323', monospace;
+  font-size: 12px;
+  text-align: center;
+  color: #ffaa00;
+}

@@ -1,6 +1,6 @@
 {
   "name": "visualizing-openclaw",
-  "version": "0.9.0",
+  "version": "1.1.0",
   "description": "OpenClaw 多 Agent 协作监控和管理平台",
   "private": true,
   "workspaces": [
@@ -13,23 +13,23 @@
     "dev:backend": "npm run dev --workspace=packages/backend",
     "build": "npm run build --workspace=packages/frontend && npm run build --workspace=packages/backend",
     "lint": "npm run lint --workspaces",
-    "test": "npm run test --workspaces"
+    "test": "npm run test --workspaces --if-present"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",
     "typescript": "^5.3.3"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=18.18.0"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/openclaw/vis-openclaw.git"
+    "url": "https://github.com/haiqinghao/vis-openclaw.git"
   },
   "bugs": {
-    "url": "https://github.com/openclaw/vis-openclaw/issues"
+    "url": "https://github.com/haiqinghao/vis-openclaw/issues"
   },
-  "homepage": "https://github.com/openclaw/vis-openclaw#readme",
+  "homepage": "https://github.com/haiqinghao/vis-openclaw#readme",
   "keywords": [
     "openclaw",
     "agent",

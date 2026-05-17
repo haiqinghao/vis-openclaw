@@ -21,6 +21,7 @@ interface Agent {
   systemPrompt: string
   workspace: string
   status: string
+  avatarUnit?: string  // Agent 形象单位ID
   createdAt: string
   updatedAt: string
 }
@@ -54,21 +55,52 @@ interface Task {
   agents: TaskAgent[]
   sessionIds: string[]
   scheduledConfig?: ScheduledConfig  // 定时任务配置
+  avatarType?: 'sheep' | 'gold'      // 任务虚拟形象类型
   createdAt: string
   updatedAt: string
+}
+
+interface EditorEnvironmentItem {
+  x: number
+  y: number
+  type: string
+}
+
+interface EditorUnitItem {
+  x: number
+  y: number
+  type: string
+}
+
+interface EditorMapLayers {
+  terrain: string[][]
+  environment: EditorEnvironmentItem[]
+  units: EditorUnitItem[]
+}
+
+interface MapData {
+  id: string
+  name: string
+  width: number
+  height: number
+  layers: EditorMapLayers
+  createdAt: number
+  updatedAt: number
 }
 
 interface DatabaseData {
   agents: Agent[]
   tasks: Task[]
+  maps: MapData[]
 }
 
 // 导出类型供其他模块使用
-export type { ScheduledConfig, Task, TaskAgent }
+export type { ScheduledConfig, Task, TaskAgent, MapData }
 
 const defaultData: DatabaseData = {
   agents: [],
-  tasks: []
+  tasks: [],
+  maps: []
 }
 
 const dbPath = path.join(dataDir, 'visualizing-openclaw.json')
@@ -78,12 +110,17 @@ const db = new Low(adapter, defaultData)
 // 初始化数据库
 await db.read()
 db.data ||= defaultData
-await db.write()
+
+// 确保 maps 数组存在（兼容旧数据）
+if (!db.data.maps) {
+  db.data.maps = []
+  await db.write()
+}
 
 // Agent 操作
 export const agentDb = {
   findAll(): Agent[] {
-    return db.data.agents.sort((a, b) => 
+    return db.data.agents.sort((a, b) =>
       new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     )
   },
@@ -93,21 +130,25 @@ export const agentDb = {
   },
 
   create(agent: {
+    id?: string  // 支持指定ID（如Gateway agent的id）
     name: string
     description?: string
     model?: string
     systemPrompt?: string
     workspace?: string
+    status?: string
+    avatarUnit?: string
   }): Agent {
     const now = new Date().toISOString()
     const newAgent: Agent = {
-      id: uuidv4(),
+      id: agent.id || uuidv4(),  // 如果提供了id就用它，否则生成新UUID
       name: agent.name,
       description: agent.description || '',
       model: agent.model || '',
       systemPrompt: agent.systemPrompt || '',
       workspace: agent.workspace || '',
-      status: 'offline',
+      status: agent.status || 'offline',
+      avatarUnit: agent.avatarUnit || '',
       createdAt: now,
       updatedAt: now
     }
@@ -138,7 +179,7 @@ export const agentDb = {
 // Task 操作
 export const taskDb = {
   findAll(): Task[] {
-    return db.data.tasks.sort((a, b) => 
+    return db.data.tasks.sort((a, b) =>
       new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     )
   },
@@ -152,6 +193,7 @@ export const taskDb = {
     description?: string
     collaborationMode?: string
     agents?: TaskAgent[]
+    avatarType?: 'sheep' | 'gold'
   }): Task {
     const now = new Date().toISOString()
     const newTask: Task = {
@@ -162,6 +204,7 @@ export const taskDb = {
       status: 'pending',
       agents: task.agents || [],
       sessionIds: [],
+      avatarType: task.avatarType,
       createdAt: now,
       updatedAt: now
     }
@@ -233,6 +276,41 @@ export const taskDb = {
       db.write()
     }
     return db.data.tasks[index]
+  }
+}
+
+// Map 操作
+export const mapDb = {
+  findAll(): MapData[] {
+    return db.data.maps.sort((a, b) => b.updatedAt - a.updatedAt)
+  },
+
+  findById(id: string): MapData | undefined {
+    return db.data.maps.find(m => m.id === id)
+  },
+
+  create(map: MapData): MapData {
+    db.data.maps.push(map)
+    db.write()
+    return map
+  },
+
+  update(id: string, updates: Partial<Omit<MapData, 'id' | 'createdAt'>>): MapData | undefined {
+    const index = db.data.maps.findIndex(m => m.id === id)
+    if (index === -1) return undefined
+
+    db.data.maps[index] = {
+      ...db.data.maps[index],
+      ...updates,
+      updatedAt: Date.now()
+    }
+    db.write()
+    return db.data.maps[index]
+  },
+
+  delete(id: string): void {
+    db.data.maps = db.data.maps.filter(m => m.id !== id)
+    db.write()
   }
 }
 

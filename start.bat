@@ -1,6 +1,6 @@
 @echo off
 echo ========================================
-echo   VIS OpenClaw V0.9 - Quick Start
+echo   VIS OpenClaw V1.1 - Quick Start
 echo ========================================
 echo.
 
