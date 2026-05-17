@@ -69,14 +69,24 @@ packages/frontend/src/
 │   ├── AgentsView.vue      # Agent 管理
 │   ├── SessionsView.vue    # 会话管理
 │   ├── CommandsView.vue    # 命令配置
-│   └── SessionDetailView.vue
+│   ├── GameView.vue        # 游戏界面
+│   └── game/               # 游戏界面编辑、地图预览、素材演示
+│       ├── GameLayout.vue
+│       ├── MapEditorView.vue
+│       ├── PreviewView.vue
+│       ├── SpriteDemoView.vue
+│       └── EnvironmentView.vue
 ├── stores/            # Pinia 状态管理
 │   ├── agent.ts       # Agent 状态
 │   ├── session.ts     # Session 状态
 │   ├── task.ts        # Task 状态
+│   ├── game.ts        # 游戏界面地图状态
 │   └── app.ts         # 应用状态
 ├── router/            # 路由配置
+├── config/            # Agent 形象和动画配置
+├── types/             # 共享类型定义
 └── styles/            # 全局样式
+    ├── game/
     ├── main.css
     └── palantir-theme.css
 ```
@@ -141,6 +151,7 @@ packages/backend/src/
 │   ├── agent.ts       # Agent API
 │   ├── session.ts     # Session API
 │   ├── task.ts        # Task API
+│   ├── maps.ts        # 地图 API
 │   ├── gateway.ts     # Gateway API
 │   └── dashboard.ts   # Dashboard API
 ├── services/          # 业务服务
@@ -228,10 +239,42 @@ export async function agents_list() {
 |------|------|------|
 | `/api/tasks` | GET | 获取任务列表 |
 | `/api/tasks` | POST | 创建任务 |
+| `/api/tasks/:id` | PUT | 更新任务可编辑字段 |
 | `/api/tasks/:id` | DELETE | 删除任务 |
 | `/api/tasks/:id/start` | POST | 分发任务 |
+| `/api/tasks/:id/pause` | POST | 暂停未分发任务 |
 | `/api/tasks/:id/schedule` | PUT | 设置定时配置 |
 | `/api/tasks/:id/schedule` | DELETE | 取消定时配置 |
+| `/api/tasks/:id/trigger` | POST | 手动触发定时任务 |
+
+#### 任务状态机
+
+任务状态由 `packages/backend/src/services/task-state.ts` 统一定义，分发后的运行态由任务分发服务和 OpenClaw 会话状态桥推进。
+
+| 状态 | 含义 | 可执行操作 |
+|------|------|------------|
+| `pending` | 新建任务，等待分发 | 编辑、定时、暂停、分发 |
+| `paused` | 尚未分发的暂停任务 | 编辑、定时、分发 |
+| `scheduled` | 已设置定时配置 | 编辑、取消定时、分发 |
+| `dispatching` | 已接受分发，正在写入 Agent 会话 | 等待会话桥更新 |
+| `distributed` | 已发送到 Agent 会话 | 等待会话桥更新 |
+| `running` | Agent 会话处理中 | 等待会话桥更新 |
+| `completed` | 关联会话完成本轮处理 | 查看结果 |
+| `failed` | 分发或会话处理失败 | 编辑、定时、重新分发 |
+| `stale` | 会话状态暂时不可确认 | 等待恢复、重新分发 |
+
+`status`、`sessionIds`、`dispatchMode`、`dispatchErrors`、`dispatchedAt`、`scheduledConfig` 属于运行态受控字段，普通更新接口不能直接覆盖。任务进入 `dispatching`、`distributed` 或 `running` 后不再支持暂停，避免前端状态和 OpenClaw 会话真实状态分叉。
+
+#### Maps API
+
+地图数据由后端 LowDB 保存，同时前端保留 localStorage 兜底。前端地图编辑器、预览页和游戏界面共享同一套 `MapData` 结构。
+
+| 端点 | 方法 | 描述 |
+|------|------|------|
+| `/api/maps` | GET | 获取地图摘要列表 |
+| `/api/maps` | POST | 创建或保存地图 |
+| `/api/maps/:id` | GET | 获取单个地图完整数据 |
+| `/api/maps/:id` | DELETE | 删除地图 |
 
 #### Gateway API
 
@@ -254,6 +297,9 @@ export async function agents_list() {
 | `agent:tool_calling` | Server → Client | Agent 进入工具调用状态 |
 | `agent:complete` | Server → Client | Agent 本轮生成完成 |
 | `agent:idle` | Server → Client | Agent 进入空闲状态 |
+| `task:created` | Server → Client | 任务创建，推送到 `tasks` 实时频道 |
+| `task:updated` | Server → Client | 任务状态或可编辑字段变更，推送到 `tasks` 实时频道 |
+| `task:deleted` | Server → Client | 任务删除，推送到 `tasks` 实时频道 |
 | `process:cleanup` | Server → Client | 失控进程已清理 |
 
 ## 定时任务
@@ -282,20 +328,53 @@ interface Task {
   id: string
   name: string
   description: string
-  status: 'pending' | 'distributed' | 'failed'
-  agents: { agentId: string }[]
+  collaborationMode: string
+  status:
+    | 'pending'
+    | 'paused'
+    | 'scheduled'
+    | 'dispatching'
+    | 'distributed'
+    | 'running'
+    | 'completed'
+    | 'failed'
+    | 'stale'
+  agents: { agentId: string; role: string; instructions?: string }[]
   sessionIds: string[]
+  dispatchMode?: 'bind-existing-session' | 'gateway-session-send' | 'agent-run'
+  dispatchErrors?: { agentId: string; error: string; code?: string; requestId?: string }[]
+  dispatchedAt?: string
+  avatarType?: 'sheep' | 'gold'
   createdAt: string
+  updatedAt: string
   scheduledConfig?: ScheduledConfig
 }
 
 interface Agent {
   id: string
   name: string
+  description: string
   model: string
-  status: 'online' | 'offline'
-  emoji?: string
-  avatar?: string
+  systemPrompt: string
+  workspace: string
+  status: string
+  avatarUnit?: string
+  createdAt: string
+  updatedAt: string
+}
+
+interface MapData {
+  id: string
+  name: string
+  width: number
+  height: number
+  layers: {
+    terrain: string[][]
+    environment: { x: number; y: number; type: string }[]
+    units: { x: number; y: number; type: string }[]
+  }
+  createdAt: number
+  updatedAt: number
 }
 ```
 
@@ -314,6 +393,19 @@ interface Agent {
 }
 ```
 
+## 第三方素材与授权
+
+V1.1 游戏界面使用了 [Pixel Frog 的 Tiny Swords](https://pixelfrog-assets.itch.io/tiny-swords) 免费部分素材，主要位于 `packages/frontend/public/assets/sprites/`，用于单位动画、建筑、地形、环境装饰和部分游戏化 UI 元素。
+
+当前项目约定：
+
+- 仅使用 Tiny Swords Free Pack；不要在未确认授权的情况下加入付费 Enemy Pack 素材。
+- 不将 Tiny Swords 素材文件作为独立素材包出售、重新打包或分发。
+- 新增第三方素材时，需要同时更新 `ASSET_CREDITS.md`、`README.md`、用户手册和相关开发说明。
+- 如需替换或新增素材，优先保持路径命名清晰，并同步更新 `packages/frontend/src/config/agentAnimations.ts`、`agentAvatars.ts` 或地图素材配置。
+
+完整素材来源说明见 [ASSET_CREDITS.md](./ASSET_CREDITS.md)。
+
 ## 测试
 
 ```bash
@@ -328,6 +420,7 @@ cd packages/backend && npm test
 
 1. 更新版本号
 2. 更新 CHANGELOG.md
-3. 构建生产版本
-4. 测试完整功能
-5. 发布到 GitHub
+3. 检查第三方素材来源与授权说明是否完整
+4. 构建生产版本
+5. 测试完整功能
+6. 发布到 GitHub

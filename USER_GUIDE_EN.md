@@ -6,8 +6,9 @@ Welcome to VIS OpenClaw! This guide will help you get started quickly.
 
 1. [System Overview](#system-overview)
 2. [Quick Start](#quick-start)
-3. [Feature Guide](#feature-guide)
-4. [FAQ](#faq)
+3. [V1.1 Highlights](#v11-highlights)
+4. [Feature Guide](#feature-guide)
+5. [FAQ](#faq)
 
 ---
 
@@ -52,6 +53,46 @@ The left sidebar contains:
 | 👤 Agents | Manage AI assistants |
 | 💬 Sessions | View and intervene conversations |
 | 📄 Commands | OpenClaw CLI command reference |
+| 🎮 Game Interface | Observe tasks, virtual task objects, and animated Agent avatars on a map |
+| 🗺️ Game Interface Editor | Create maps, preview scenes, and manage unit/environment assets |
+
+---
+
+## V1.1 Highlights
+
+V1.1 turns OpenClaw Agent collaboration from a list-and-log workflow into an observable, interactive task scene. The release adds a game interface, map editor, map preview, unit showcase, and environment asset showcase so users can verify task dispatch, Agent responses, and collaboration state visually.
+
+### OpenClaw × VIS Linkage
+
+After a task is dispatched from VIS OpenClaw, it is sent to the target Agent's OpenClaw conversation and represented in the VIS game interface. This lets users verify both sides of the workflow: whether the Agent received the message and whether the visual task scene updated.
+
+![OpenClaw and VIS linkage](./usershouce/game/openclaw%26vis%20openclaw.png)
+
+### Game Interface
+
+The game interface places current tasks, participating Agents, task avatars, and map environments on a pannable and zoomable canvas. It is designed for live demos, task acceptance checks, and collaboration-state observation.
+
+![Game Interface](./usershouce/game/youxijiemian.png)
+
+### Map Editor and Preview
+
+The map editor supports map size presets, zoom controls, brush, eraser, pan, fill, clear, import, and export. The preview page helps validate saved maps and choose the map used by the game interface.
+
+![Map Editor](./usershouce/game/mapbianji2.png)
+
+![Map Preview](./usershouce/game/mapyulan.png)
+
+### Units and Environment Assets
+
+V1.1 uses Tiny Swords-style assets for virtual Agents, task scenes, terrain, buildings, and environment decoration.
+
+![Unit Showcase](./usershouce/game/danweiyanshi.png)
+
+![Environment Assets](./usershouce/game/huanjign.png)
+
+### Asset Source
+
+The game interface, map editor, unit animations, buildings, terrain, environment decorations, and selected game-style UI elements use assets from the free portion of [Tiny Swords by Pixel Frog](https://pixelfrog-assets.itch.io/tiny-swords). The project currently uses only the Tiny Swords Free Pack. The assets may be used in this project and modified as needed, but they must not be redistributed, resold, or repackaged as standalone assets. See [ASSET_CREDITS.md](./ASSET_CREDITS.md) for the full project note.
 
 ---
 
@@ -100,9 +141,16 @@ The dashboard is the main interface showing overall system status.
 | Status | Description |
 |--------|-------------|
 | Pending | Task created, waiting for distribution |
-| Distributed | Task sent to Agent |
-| Failed | Task distribution failed |
+| Paused | Task has not been dispatched and can be resumed before dispatch |
 | Scheduled | Task has schedule configured |
+| Dispatching | VIS accepted the dispatch request and is writing the task into Agent sessions |
+| Distributed | Task sent to Agent |
+| Running | Agent session is processing the task |
+| Completed | Linked Agent session completed the current turn |
+| Failed | Task dispatch or linked session processing failed |
+| Stale | Agent session state is temporarily unknown; refresh or wait for Gateway recovery |
+
+After a task enters "Dispatching", "Distributed", or "Running", its state is controlled by the OpenClaw session bridge and pause is no longer available. Create a new task or handle the running session in OpenClaw if you need to change direction.
 
 ---
 
@@ -234,4 +282,4 @@ Run `stop.bat` (Windows) or press Ctrl+C in terminal.
 
 ---
 
-*Last Updated: 2026-04-01*
+*Last Updated: 2026-05-17*

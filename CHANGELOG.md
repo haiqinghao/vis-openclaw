@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Game interface visualization module with map selection, live agent/task avatars, sprite animation, map zoom, pan, and centered viewport controls.
 - Map editor and preview support for backend-backed map storage, finer zoom presets, mouse-wheel zoom, drag-to-pan, and viewport centering.
+- Free Tiny Swords asset integration for V1.1 game-interface units, buildings, terrain, environment decorations, and visual demos.
 - OpenClaw Gateway event bridge for lower-cost agent/session status tracking.
 - Task dispatch state model with task-to-agent session linkage and real-time game interface animation updates.
 
@@ -23,6 +24,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed task dispatch timeout and visual-agent movement chain so task assignment reaches OpenClaw sessions and the game view.
 - Fixed game-map preview/editor centering and interaction issues after scaling.
 
+### Documentation
+- Added Tiny Swords / Pixel Frog asset-source notes and repository asset-use policy.
+- Added `ASSET_CREDITS.md` with bilingual third-party asset attribution and usage boundaries.
 
 ## [0.9.0] - 2026-04-01
 

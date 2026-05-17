@@ -41,6 +41,10 @@ npm run dev
 | 前端 | http://localhost:3000 |
 | 后端 API | http://localhost:4000 |
 
+## V1.1 游戏界面素材说明
+
+V1.1 的游戏界面、地图编辑器、单位动画、建筑、地形和环境装饰使用了 [Pixel Frog 的 Tiny Swords](https://pixelfrog-assets.itch.io/tiny-swords) 免费部分素材。当前项目仅使用 Tiny Swords Free Pack；素材不得作为独立素材包重新分发、转售或重新打包。完整说明见 [ASSET_CREDITS.md](./ASSET_CREDITS.md)。
+
 ## 停止服务
 
 **Windows:**

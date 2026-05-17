@@ -288,6 +288,31 @@
             color: #004085;
         }
 
+        .badge-paused {
+            background: #e9ecef;
+            color: #495057;
+        }
+
+        .badge-dispatching {
+            background: #cfe2ff;
+            color: #084298;
+        }
+
+        .badge-running {
+            background: #d1e7dd;
+            color: #0f5132;
+        }
+
+        .badge-completed {
+            background: #d1e7dd;
+            color: #146c43;
+        }
+
+        .badge-stale {
+            background: #f8d7da;
+            color: #842029;
+        }
+
         /* Responsive */
         @media (max-width: 768px) {
             .header h1 {
@@ -355,6 +380,61 @@ border-radius: 12px;
             font-weight: bold;
             margin-right: 10px;
         }
+
+        /* V1.1 update section */
+        .release-hero {
+            background: linear-gradient(135deg, #eef3ff 0%, #f7efff 100%);
+            border: 1px solid #dfe7ff;
+            border-radius: 14px;
+            padding: 24px;
+            margin: 20px 0 28px;
+        }
+
+        .release-hero strong {
+            color: #4f63d9;
+        }
+
+        .update-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 16px;
+            margin: 20px 0;
+        }
+
+        .update-card {
+            background: #f8f9ff;
+            border: 1px solid #e4e8ff;
+            border-radius: 12px;
+            padding: 18px;
+        }
+
+        .update-card strong {
+            display: block;
+            color: #4f63d9;
+            margin-bottom: 8px;
+        }
+
+        .workflow-list {
+            display: grid;
+            gap: 12px;
+            margin: 20px 0;
+        }
+
+        .workflow-item {
+            background: #fbfcff;
+            border-left: 4px solid #667eea;
+            border-radius: 10px;
+            padding: 16px 18px;
+        }
+
+        .callout {
+            background: #fffaf0;
+            border: 1px solid #ffe3ad;
+            border-left: 4px solid #f59e0b;
+            border-radius: 10px;
+            padding: 16px 18px;
+            margin: 18px 0;
+        }
     </style>
 </head>
 <body>
@@ -369,6 +449,7 @@ border-radius: 12px;
         <div class="nav">
             <a href="#overview">系统概述</a>
             <a href="#quickstart">快速开始</a>
+            <a href="#v11-update">V1.1 更新</a>
             <a href="#features">功能详解</a>
             <a href="#faq">常见问题</a>
         </div>
@@ -390,6 +471,14 @@ border-radius: 12px;
                     <ol>
                         <li><a href="#quickstart-launch">启动系统</a></li>
                         <li><a href="#quickstart-nav">界面导航</a></li>
+                    </ol>
+                </li>
+                <li><a href="#v11-update">V1.1 更新亮点</a>
+                    <ol>
+                        <li><a href="#v11-linkage">OpenClaw × VIS 联动</a></li>
+                        <li><a href="#v11-game">游戏界面</a></li>
+                        <li><a href="#v11-editor">地图编辑与预览</a></li>
+                        <li><a href="#v11-assets">单位与环境素材</a></li>
                     </ol>
                 </li>
                 <li><a href="#features">功能详解</a>
@@ -484,11 +573,148 @@ border-radius: 12px;
                         <td>📄 命令配置</td>
                         <td>OpenClaw CLI 命令参考</td>
                     </tr>
+                    <tr>
+                        <td>🎮 游戏界面</td>
+                        <td>用地图和虚拟形象观察任务、Agent 和协作状态</td>
+                    </tr>
+                    <tr>
+                        <td>🗺️ 游戏界面编辑</td>
+                        <td>创建地图、预览场景、管理单位与环境素材</td>
+                    </tr>
                 </tbody>
             </table>
         </section>
 
-        <!-- Section 3: Features -->
+        <!-- Section 3: V1.1 Update -->
+        <section id="v11-update">
+            <h2 id="v11-title">🎮 V1.1 更新亮点</h2>
+
+            <div class="release-hero">
+                <p><strong>V1.1 的核心目标</strong> 是把 OpenClaw 的 Agent 协作过程从“列表和日志”升级为“可观察、可理解、可互动的任务现场”。新版在保留监测面板、Agent 管理和会话管理能力的基础上，新增游戏界面、地图编辑器、地图预览、单位演示和环境素材管理，让任务分发、Agent 响应和协作关系以更直观的方式呈现。</p>
+                <p>对于日常使用者，这意味着可以在同一个产品中完成任务创建、任务分发、Agent 会话跟踪和视觉化验收；对于调试人员，则可以更快定位“任务是否发出、Agent 是否响应、视觉状态是否同步”等关键问题。</p>
+            </div>
+
+            <div class="update-grid">
+                <div class="update-card">
+                    <strong>实时联动</strong>
+                    <p>任务分发后同步进入 OpenClaw Agent 会话，并在 VIS 游戏界面中形成可观察的任务现场。</p>
+                </div>
+                <div class="update-card">
+                    <strong>地图化表达</strong>
+                    <p>Agent、任务、建筑和环境元素被放置在同一张地图中，便于观察任务关系和协作位置。</p>
+                </div>
+                <div class="update-card">
+                    <strong>可编辑场景</strong>
+                    <p>支持地图尺寸、地形、环境元素、单位资源、保存、导入、导出和预览，便于构建不同演示场景。</p>
+                </div>
+                <div class="update-card">
+                    <strong>动作资产接入</strong>
+                    <p>新增战斗单位、资源单位、怪物、建筑、树木、石块、灌木和水域等素材展示，提升虚拟 Agent 的表现力。</p>
+                </div>
+            </div>
+
+            <h3 id="v11-linkage">1. OpenClaw × VIS 联动</h3>
+            <p>新版将 OpenClaw 会话窗口与 VIS 游戏界面放在同一个工作流中理解：左侧是 Agent 实际收到的任务消息和工具调用过程，右侧是 VIS 对同一任务现场的可视化表达。用户可以同时确认“消息是否进入 Agent 会话”和“游戏界面是否同步展示任务与 Agent 动作”。</p>
+            <img src="usershouce/game/openclaw%26vis%20openclaw.png" alt="OpenClaw 与 VIS OpenClaw 联动效果" class="screenshot">
+            <p class="screenshot-caption">图 V1.1-1 OpenClaw 会话与 VIS 游戏界面联动</p>
+
+            <div class="workflow-list">
+                <div class="workflow-item">
+                    <strong>任务分发闭环</strong>
+                    <p>在 VIS 中创建并分发任务后，系统会将任务内容写入目标 Agent 的 OpenClaw 会话窗口，同时在游戏界面生成任务虚拟形象，帮助用户确认任务已经到达正确对象。</p>
+                </div>
+                <div class="workflow-item">
+                    <strong>会话响应观察</strong>
+                    <p>Agent 在 OpenClaw 中的回复、工具调用和任务处理过程，可以与 VIS 中的 Agent 动作和任务状态并行观察，减少只看单一日志带来的误判。</p>
+                </div>
+                <div class="workflow-item">
+                    <strong>交互场景区分</strong>
+                    <p>直接在 Agent 会话框聊天时，虚拟 Agent 主要在原地做响应动作；从任务管理分发任务时，Agent 会移动到任务虚拟形象附近执行动作，用视觉行为区分“聊天响应”和“任务执行”。</p>
+                </div>
+            </div>
+
+            <h3 id="v11-game">2. 游戏界面</h3>
+            <p>游戏界面是 V1.1 最重要的新增入口。它把当前任务、参与 Agent、任务虚拟形象和地图环境放在一个可拖动、可缩放的画布中，适合做实时演示、任务验收和协作关系观察。</p>
+            <img src="usershouce/game/youxijiemian.png" alt="游戏界面任务现场" class="screenshot">
+            <p class="screenshot-caption">图 V1.1-2 游戏界面中的任务、Agent 与地图现场</p>
+
+            <h4>核心能力</h4>
+            <table>
+                <thead>
+                    <tr>
+                        <th>能力</th>
+                        <th>产品价值</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>当前任务列表</td>
+                        <td>在地图左侧集中展示任务名称与参与 Agent，便于快速定位正在处理的工作。</td>
+                    </tr>
+                    <tr>
+                        <td>虚拟 Agent 行为</td>
+                        <td>通过站立、移动、交互等动作表达 Agent 当前状态，使任务处理过程更容易被观察。</td>
+                    </tr>
+                    <tr>
+                        <td>任务虚拟形象</td>
+                        <td>任务在地图上具象化展示，分发后 Agent 会围绕任务点展开动作，强化任务归属关系。</td>
+                    </tr>
+                    <tr>
+                        <td>缩放与拖动</td>
+                        <td>支持不同缩放比例和地图拖动，在大地图下也能快速查看全部区域或聚焦局部现场。</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <div class="callout">
+                <p><strong>使用建议：</strong>验收任务分发时，建议同时观察 OpenClaw 会话窗口与 VIS 游戏界面。会话窗口用于确认 Agent 是否收到任务，游戏界面用于确认任务现场是否正确同步。</p>
+            </div>
+
+            <h3 id="v11-editor">3. 地图编辑与预览</h3>
+            <p>游戏界面编辑页提供地图编辑器和预览能力。地图编辑器偏向“创建和维护场景”，预览页偏向“验收和选择最终展示地图”。</p>
+
+            <h4>地图编辑器</h4>
+            <p>地图编辑器支持从空白网格开始搭建场景，也支持在已有地图上继续调整。用户可以选择网格尺寸、缩放比例和编辑工具，并使用画笔、橡皮擦、拖动、填充、清空、填充全部等操作快速完成地图构建。</p>
+            <img src="usershouce/game/mapbianji.png" alt="地图编辑器空白地图" class="screenshot">
+            <p class="screenshot-caption">图 V1.1-3 地图编辑器基础界面</p>
+
+            <p>完成地形和环境布置后，右侧面板会显示地图名称、保存、列表、导出、导入和统计信息。统计信息可以帮助用户确认当前地图中地形、环境元素和单位数量是否符合预期。</p>
+            <img src="usershouce/game/mapbianji2.png" alt="地图编辑器完成地图" class="screenshot">
+            <p class="screenshot-caption">图 V1.1-4 完成地形和环境布置后的地图编辑器</p>
+
+            <h4>地图预览</h4>
+            <p>预览页用于检查已保存地图的实际展示效果。左侧可以切换已保存地图，并选择哪张地图用于游戏界面；中间区域提供缩放、拖动和居中能力；右侧显示地图尺寸、地形数量、环境元素数量和单位数量。</p>
+            <img src="usershouce/game/mapyulan.png" alt="地图预览与游戏界面地图选择" class="screenshot">
+            <p class="screenshot-caption">图 V1.1-5 地图预览与游戏界面地图选择</p>
+
+            <h4>推荐流程</h4>
+            <ol>
+                <li>在「地图编辑器」中选择地图尺寸和基础地形。</li>
+                <li>使用环境元素和单位素材搭建演示场景。</li>
+                <li>保存地图，并在「预览」中检查比例、中心位置和完整度。</li>
+                <li>在预览页选择该地图作为游戏界面地图。</li>
+                <li>回到「游戏界面」进行任务分发和 Agent 行为验收。</li>
+            </ol>
+
+            <h3 id="v11-assets">4. 单位与环境素材</h3>
+            <p>V1.1 接入了更丰富的 Tiny Swords 风格资源，为虚拟 Agent 和地图环境提供更完整的视觉素材基础。素材展示页不仅用于浏览资源，也用于检查动作帧、缩放比例和动效速度。</p>
+
+            <div class="callout">
+                <p><strong>素材来源说明：</strong>本版本游戏化界面使用了 <a href="https://pixelfrog-assets.itch.io/tiny-swords" target="_blank" rel="noopener noreferrer">Pixel Frog 的 Tiny Swords</a> 免费部分素材，覆盖单位动画、建筑、地形、环境装饰和部分游戏化 UI 元素。项目仅使用 Free Pack；素材可用于项目展示和二次开发，但不得作为独立素材包重新分发、转售或重新打包。完整说明见 <code>ASSET_CREDITS.md</code>。</p>
+            </div>
+
+            <h4>单位演示</h4>
+            <p>单位演示页按角色类型展示动作资产，包括弓箭手、战士、枪骑兵、僧侣和工人等。每类单位支持不同的站立、奔跑、攻击、防御、治疗或资源携带动作，为后续 Agent 形象差异化提供素材基础。</p>
+            <img src="usershouce/game/danweiyanshi.png" alt="单位演示与动作资产" class="screenshot">
+            <p class="screenshot-caption">图 V1.1-6 单位演示与动作资产</p>
+
+            <h4>环境元素</h4>
+            <p>环境元素页展示树木、石块、灌木和水域等地图素材。通过这些元素，用户可以把任务现场从单一网格扩展为更接近真实场景的空间，提升演示的辨识度和沉浸感。</p>
+            <img src="usershouce/game/huanjign.png" alt="环境元素素材展示" class="screenshot">
+            <p class="screenshot-caption">图 V1.1-7 环境元素素材展示</p>
+        </section>
+
+        <!-- Section 4: Features -->
         <section id="features">
             <h2 id="features-title">🛠️ 功能详解</h2>
 
@@ -569,19 +795,40 @@ border-radius: 12px;
                         <td>任务已创建，等待分发</td>
                     </tr>
                     <tr>
-                        <td><span class="badge badge-sent">已分发</span></td>
-                        <td>任务已发送给 Agent</td>
-                    </tr>
-                    <tr>
-                        <td><span class="badge badge-failed">失败</span></td>
-                        <td>任务分发失败</td>
+                        <td><span class="badge badge-paused">已暂停</span></td>
+                        <td>任务尚未分发，可恢复后再分发</td>
                     </tr>
                     <tr>
                         <td><span class="badge badge-scheduled">定时</span></td>
                         <td>任务已设置定时</td>
                     </tr>
+                    <tr>
+                        <td><span class="badge badge-dispatching">分发中</span></td>
+                        <td>系统已接受分发请求，正在写入 Agent 会话</td>
+                    </tr>
+                    <tr>
+                        <td><span class="badge badge-sent">已分发</span></td>
+                        <td>任务已发送给 Agent</td>
+                    </tr>
+                    <tr>
+                        <td><span class="badge badge-running">处理中</span></td>
+                        <td>Agent 会话正在处理任务</td>
+                    </tr>
+                    <tr>
+                        <td><span class="badge badge-completed">已完成</span></td>
+                        <td>关联 Agent 会话已完成本轮处理</td>
+                    </tr>
+                    <tr>
+                        <td><span class="badge badge-failed">失败</span></td>
+                        <td>任务分发或会话处理失败</td>
+                    </tr>
+                    <tr>
+                        <td><span class="badge badge-stale">状态待确认</span></td>
+                        <td>Agent 会话状态暂时无法确认，需要刷新或等待 Gateway 恢复</td>
+                    </tr>
                 </tbody>
             </table>
+            <p>任务一旦进入「分发中」「已分发」或「处理中」，状态就由 OpenClaw 会话桥接链路接管，不再支持暂停；如果需要调整任务，请创建新任务或在 OpenClaw 会话侧处理。</p>
 
             <!-- 3.2 Agent Management -->
             <h3 id="features-agent">2. Agent 管理</h3>
@@ -741,7 +988,7 @@ border-radius: 12px;
             <p>按分类浏览所有命令，支持一键复制。</p>
         </section>
 
-        <!-- Section 4: FAQ -->
+        <!-- Section 5: FAQ -->
         <section id="faq">
             <h2 id="faq-title">❓ 常见问题</h2>
 
@@ -790,7 +1037,7 @@ border-radius: 12px;
 
     <!-- Footer -->
     <footer class="footer">
-        <p>VIS OpenClaw 用户手册 | 最后更新: 2026-04-01</p>
+        <p>VIS OpenClaw 用户手册 | 最后更新: 2026-05-17</p>
     </footer>
 </body>
 </html>

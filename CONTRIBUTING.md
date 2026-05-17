@@ -42,6 +42,13 @@ npm run dev
 - 使用 CSS 变量定义主题色
 - 遵循 Palantir 深色主题风格
 
+### 第三方素材
+
+- V1.1 游戏界面当前使用 [Pixel Frog 的 Tiny Swords](https://pixelfrog-assets.itch.io/tiny-swords) 免费部分素材。
+- 不要提交未确认授权的付费素材、商业素材或来源不明的素材。
+- 不要把 Tiny Swords 素材作为独立素材包重新打包、转售或分发。
+- 新增、替换或删除第三方素材时，请同步更新 [ASSET_CREDITS.md](./ASSET_CREDITS.md) 以及相关用户/开发文档。
+
 ## 提交信息规范
 
 使用约定式提交：
